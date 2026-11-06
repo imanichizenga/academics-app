@@ -6,13 +6,13 @@ import { useState } from "react";
 import { Button, IconButton } from "@/components/ui/button";
 import { DataTable, type Column } from "@/components/ui/data-table";
 import { Avatar, Badge, Card, Dropdown, DropdownContent, DropdownItem, DropdownSeparator, DropdownTrigger, EmptyState, PageHeader, Skeleton, Tabs } from "@/components/ui/display";
-import { Field, Input, PhoneInput, Select } from "@/components/ui/form";
+import { Field, Input, PasswordInput, PhoneInput, Select } from "@/components/ui/form";
 import { Link } from "@/components/ui/link";
 import { ConfirmSheet, Sheet } from "@/components/ui/overlay";
 import { api, patch, post } from "@/lib/api";
 import { useAction } from "@/lib/providers";
 import { useTable } from "@/lib/use-table";
-import { dateLabel, dateTime, money, normalizePhone, timeAgo } from "@/lib/utils";
+import { dateLabel, dateTime, formatPhone, money, normalizePhone, timeAgo } from "@/lib/utils";
 
 const ORDER_TONE: Record<string, "success" | "danger" | "warning" | "neutral"> = { completed: "success", failed: "danger", pending: "warning", expired: "neutral", cancelled: "neutral", voided: "neutral" };
 const OrderBadge = ({ s }: { s: string }) => <Badge tone={ORDER_TONE[s]}>{s}</Badge>;
@@ -24,7 +24,7 @@ export function Orders() {
   const table = useTable<OrderRow>("/admin/orders/");
   const router = useRouter();
   const columns: Column<OrderRow>[] = [
-    { key: "item", header: "Item", cell: (r) => <div className="min-w-0"><div className="truncate font-medium">{r.item_title}</div><div className="truncate text-[13px] text-fg-3">{r.first_name} {r.last_name} · {r.phone}</div></div> },
+    { key: "item", header: "Item", cell: (r) => <div className="min-w-0"><div className="truncate font-medium">{r.item_title}</div><div className="truncate text-[13px] text-fg-3">{r.first_name} {r.last_name} · {formatPhone(r.phone)}</div></div> },
     { key: "amount", header: "Amount", sortable: true, cell: (r) => <span className="tabular-nums">{money(r.amount)}</span> },
     { key: "status", header: "Status", cell: (r) => <OrderBadge s={r.status} /> },
     { key: "provider", header: "Network", mobile: false, cell: (r) => <span className="text-fg-2">{r.payment_provider || "—"}</span> },
@@ -68,8 +68,9 @@ export function OrderDetail({ id }: { id: string }) {
           <h2 className="mb-3 text-sm font-semibold">Customer</h2>
           <dl className="space-y-2 text-sm">
             <div><dt className="text-[13px] text-fg-3">Name</dt><dd>{data.first_name} {data.last_name}</dd></div>
-            <div><dt className="text-[13px] text-fg-3">Phone</dt><dd>{data.phone}</dd></div>
+            <div><dt className="text-[13px] text-fg-3">Phone</dt><dd className="tabular-nums">{formatPhone(data.phone)}</dd></div>
             {data.user && <div><Link href={`/admin/users/${data.user}`} className="text-primary-ink">Open user</Link></div>}
+            {data.status === "completed" && data.order_type !== "gateway_test" && <div><Link href={`/library/receipts/${data.id}`} className="text-primary-ink">Open receipt</Link></div>}
             <div><dt className="text-[13px] text-fg-3">Reference</dt><dd className="break-all">{data.snippe_reference || "—"}</dd></div>
             <div><dt className="text-[13px] text-fg-3">Network</dt><dd>{data.payment_provider || "—"}</dd></div>
             {data.failure_reason && <div><dt className="text-[13px] text-fg-3">Reason</dt><dd className="text-danger">{data.failure_reason}</dd></div>}
@@ -89,7 +90,7 @@ export function OrderDetail({ id }: { id: string }) {
 
 type UserRow = { id: string; phone: string; first_name: string; last_name: string; email: string; role: string; is_active: boolean; source: string; date_joined: string; last_seen: string | null; has_subscription: boolean; must_change_password: boolean };
 const SOURCES: Record<string, string> = { self_signup: "Signed up", auto_created_by_payment: "From payment", admin_created: "Added by admin" };
-const nameOf = (u: UserRow) => `${u.first_name} ${u.last_name}`.trim() || u.phone;
+const nameOf = (u: UserRow) => `${u.first_name} ${u.last_name}`.trim() || formatPhone(u.phone);
 export function UsersList() {
   const table = useTable<UserRow>("/admin/users/");
   const router = useRouter();
@@ -99,7 +100,7 @@ export function UsersList() {
   const bulk = useAction((v: { ids: string[]; action: string }) => post("/admin/users/bulk/", v), { success: (r) => `${r.count} users updated`, invalidate: [[key]] });
   const create = useAction(() => post("/admin/users/", { ...form, phone: normalizePhone(form.phone) ?? form.phone }), { success: "User added. Their password is their phone number.", invalidate: [[key]], onSuccess: () => setAdding(false) });
   const columns: Column<UserRow>[] = [
-    { key: "first_name", header: "Name", sortable: true, cell: (r) => <div className="flex min-w-0 items-center gap-2.5"><Avatar name={nameOf(r)} className="size-8" /><div className="min-w-0"><div className="truncate font-medium">{nameOf(r)}</div><div className="truncate text-[13px] text-fg-3">{r.phone}</div></div></div> },
+    { key: "first_name", header: "Name", sortable: true, cell: (r) => <div className="flex min-w-0 items-center gap-2.5"><Avatar name={nameOf(r)} className="size-8" /><div className="min-w-0"><div className="truncate font-medium">{nameOf(r)}</div><div className="truncate text-[13px] tabular-nums text-fg-3">{formatPhone(r.phone)}</div></div></div> },
     { key: "role", header: "Role", cell: (r) => <Badge tone={r.role === "student" ? "neutral" : "primary"}>{r.role}</Badge> },
     { key: "state", header: "Status", cell: (r) => (r.is_active ? (r.has_subscription ? <Badge tone="success">Subscribed</Badge> : <Badge>Active</Badge>) : <Badge tone="danger">Suspended</Badge>) },
     { key: "source", header: "Source", mobile: false, cell: (r) => <span className="text-fg-2">{SOURCES[r.source]}</span> },
@@ -183,7 +184,7 @@ export function UserDetail({ id }: { id: string }) {
         <Avatar name={nameOf(u)} className="size-12 text-base" />
         <div className="min-w-0 flex-1">
           <h1 className="truncate text-[22px] font-semibold tracking-tight">{nameOf(u)}</h1>
-          <div className="flex flex-wrap items-center gap-2 text-sm text-fg-2">{u.phone}<Badge tone={u.role === "student" ? "neutral" : "primary"}>{u.role}</Badge>{!u.is_active && <Badge tone="danger">Suspended</Badge>}{u.must_change_password && <Badge tone="warning">Must change password</Badge>}</div>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-fg-2"><span className="tabular-nums">{formatPhone(u.phone)}</span><Badge tone={u.role === "student" ? "neutral" : "primary"}>{u.role}</Badge>{!u.is_active && <Badge tone="danger">Suspended</Badge>}{u.must_change_password && <Badge tone="warning">Must change password</Badge>}</div>
         </div>
         <div className="flex gap-2">
           {u.role === "student" && <Button variant="secondary" loading={viewAs.isPending} onClick={() => viewAs.mutate()}><Eye />View as student</Button>}
@@ -230,7 +231,7 @@ export function UserDetail({ id }: { id: string }) {
       {tab === "audit" && (data.audit.length === 0 ? <EmptyState icon={ShieldCheck} title="No changes logged" text="Admin changes to this user appear here." /> : <Card className="divide-y">{data.audit.map((a: any) => <div key={a.id} className="p-3 text-sm"><code className="text-[13px]">{a.action}</code><div className="text-[13px] text-fg-3">{a.actor_label} · {dateTime(a.timestamp)}</div></div>)}</Card>)}
       <Grant userId={id} open={grant} onOpenChange={setGrant} onDone={done} />
       <Sheet open={reset} onOpenChange={setReset} title="Reset password" description="Leave empty to reset it to their phone number. They must change it at next login." size="sm" footer={<Button loading={resetPw.isPending} onClick={() => resetPw.mutate()}>Reset password</Button>}>
-        <Field label="New password (optional)"><Input value={custom} onChange={(e) => setCustom(e.target.value)} /></Field>
+        <Field label="New password (optional)"><PasswordInput autoComplete="new-password" value={custom} onChange={(e) => setCustom(e.target.value)} /></Field>
       </Sheet>
       <ConfirmSheet open={anon} onOpenChange={setAnon} title="Delete and anonymise?" text="Their name, phone and email are erased. Order totals stay for your records. This cannot be undone." confirmLabel="Anonymise" danger loading={anonymise.isPending} onConfirm={() => anonymise.mutate()} />
       <Sheet open={!!entAction} onOpenChange={(v) => { if (!v) setEntAction(null); }} title={entAction?.kind === "revoke" ? "Revoke access" : "Extend access"} description={entAction?.ent.title} size="sm" footer={<Button disabled={!reason.trim()} variant={entAction?.kind === "revoke" ? "danger" : "primary"} loading={entitlement.isPending} onClick={() => entitlement.mutate()}>{entAction?.kind === "revoke" ? "Revoke" : "Extend"}</Button>}>

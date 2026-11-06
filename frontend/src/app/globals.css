@@ -126,13 +126,24 @@ a:active:not([aria-disabled="true"]), button:active:not(:disabled), [role="butto
 [aria-busy="true"] { pointer-events: none; }
 .no-press:active { transform: none !important; }
 
-.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; scroll-snap-type: x proximity; overscroll-behavior-x: contain; }
+.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; scroll-snap-type: x proximity; overscroll-behavior-x: contain; scroll-padding-inline: 16px; }
+@media (min-width: 768px) { .carousel { scroll-padding-inline: 0; } }
 .scroll-x::-webkit-scrollbar { display: none; }
 .scroll-x > * { scroll-snap-align: start; }
 .pb-tabbar { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom, 0px) + 16px); }
 @media (min-width: 768px) { .pb-tabbar { padding-bottom: 48px; } }
 .safe-bottom { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .safe-top { padding-top: env(safe-area-inset-top, 0px); }
+
+/* One reading column: text, title, cover and paywall share this left edge and width. */
+.measure { width: 100%; max-width: 42rem; }
+
+@media print {
+  body { background: #fff; color: #000; }
+  .no-print, [data-sonner-toaster], header, nav, footer { display: none !important; }
+  main { min-height: 0 !important; }
+  .print-sheet { border: 0 !important; box-shadow: none !important; max-width: none !important; }
+}
 
 @keyframes shimmer { 100% { transform: translateX(100%); } }
 .skeleton { position: relative; overflow: hidden; background: var(--surface-2); border-radius: var(--radius-md); }
@@ -155,7 +166,7 @@ a:active:not([aria-disabled="true"]), button:active:not(:disabled), [role="butto
 }
 
 /* Long-form reading: serif, 68ch measure, line-height 1.7. Also used by the editor and its preview. */
-.prose-reading { font-family: var(--font-serif); font-size: 1.135rem; line-height: 1.7; color: var(--fg); max-width: 68ch; overflow-wrap: anywhere; }
+.prose-reading { font-family: var(--font-serif); font-size: 1.135rem; line-height: 1.7; color: var(--fg); overflow-wrap: anywhere; }
 .prose-reading > * + * { margin-top: 1.15em; }
 .prose-reading h2, .prose-reading h3, .prose-reading h4 { font-family: var(--font-sans); letter-spacing: -0.015em; line-height: 1.25; font-weight: 650; }
 .prose-reading h2 { font-size: 1.5rem; margin-top: 2em; }

@@ -14,7 +14,7 @@ import { Link } from "@/components/ui/link";
 import { ThemeToggle } from "@/components/site/shell";
 import { api } from "@/lib/api";
 import { logout, useSession, useSite } from "@/lib/providers";
-import { cn } from "@/lib/utils";
+import { cn, formatPhone } from "@/lib/utils";
 import { UploadTray } from "./upload-tray";
 
 type Item = { href: string; label: string; icon: LucideIcon; adminOnly?: boolean };
@@ -88,7 +88,7 @@ function Palette({ open, setOpen, role }: { open: boolean; setOpen: (v: boolean)
             <Command.List className="max-h-80 overflow-y-auto p-1.5">
               <Command.Empty className="p-6 text-center text-sm text-fg-3">No results</Command.Empty>
               {data?.contents.map((c) => <Command.Item key={c.id} value={`c-${c.id}`} className={item} onSelect={() => go(`/admin/contents/${c.id}`)}><BookOpen /><span className="truncate">{c.title}</span></Command.Item>)}
-              {data?.users.map((u) => <Command.Item key={u.id} value={`u-${u.id}`} className={item} onSelect={() => go(`/admin/users/${u.id}`)}><Users /><span className="truncate">{u.first_name} {u.last_name} · {u.phone}</span></Command.Item>)}
+              {data?.users.map((u) => <Command.Item key={u.id} value={`u-${u.id}`} className={item} onSelect={() => go(`/admin/users/${u.id}`)}><Users /><span className="truncate">{u.first_name} {u.last_name} · {formatPhone(u.phone)}</span></Command.Item>)}
               {q.length < 2 && (<>
                 <Command.Item className={item} value="new content" onSelect={() => go("/admin/contents/new")}><Plus />New content</Command.Item>
                 {nav.map((n) => <Command.Item key={n.href} className={item} value={n.label} onSelect={() => go(n.href)}><n.icon />{n.label}</Command.Item>)}
@@ -122,7 +122,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   }, []);
   const flip = () => { setCollapsed((c) => { try { localStorage.setItem("sidebar", c ? "0" : "1"); } catch {} return !c; }); };
   if (loading || !user || user.role === "student") return <div className="grid min-h-dvh place-items-center"><Skeleton className="h-8 w-40" /></div>;
-  const name = `${user.first_name} ${user.last_name}`.trim() || user.phone;
+  const name = `${user.first_name} ${user.last_name}`.trim() || formatPhone(user.phone);
   return (
     <div className="flex min-h-dvh">
       <aside className={cn("sticky top-0 hidden h-dvh shrink-0 flex-col border-r bg-surface transition-[width] duration-200 md:flex", collapsed ? "w-[60px]" : "w-60")}>

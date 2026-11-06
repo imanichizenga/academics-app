@@ -25,6 +25,7 @@ from apps.payments.models import Entitlement, Order, SubscriptionPlan
 
 R = random.Random(7)
 ADMIN_PHONE, EDITOR_PHONE = "255754000001", "255754000002"
+SUBSCRIBER_PHONE, LAPSED_PHONE = "255754200001", "255754200002"  # fixed accounts for demos and e2e
 DEMO_PASSWORD = "darasa-demo-2026"
 FIRST = ["Asha", "Juma", "Neema", "Baraka", "Zawadi", "Hamisi", "Rehema", "Daudi", "Upendo", "Salim", "Halima", "Peter"]
 LAST = ["Mushi", "Mwakyusa", "Massawe", "Kimaro", "Shayo", "Ally", "Mollel", "Nyerere", "Lema", "Mbwana", "Said"]
@@ -203,7 +204,8 @@ class Command(BaseCommand):
             raise CommandError("Seeding is for development. Use --force to run it with DEBUG off.")
         self.skip_video = options["skip_video"]
         if Content.objects.exists():
-            self.stdout.write("Demo data already present, nothing to do.")
+            self.demo_accounts()
+            self.stdout.write("Demo data already present, only the demo accounts were checked.")
             return
         self.tmp = Path(tempfile.mkdtemp())
         self.site()
@@ -213,13 +215,35 @@ class Command(BaseCommand):
         contents = self.contents(admin, cats)
         self.orders(students, plans, contents)
         self.engagement(admin, students, contents)
+        self.demo_accounts()
         self.stdout.write(self.style.SUCCESS(
             f"Seeded {len(contents)} contents.\nAdmin: {ADMIN_PHONE} / {DEMO_PASSWORD}\n"
-            f"Editor: {EDITOR_PHONE} / {DEMO_PASSWORD}\nStudent: {students[0].phone} / {DEMO_PASSWORD}"))
+            f"Editor: {EDITOR_PHONE} / {DEMO_PASSWORD}\nStudent: {students[0].phone} / {DEMO_PASSWORD}\n"
+            f"Subscriber: {SUBSCRIBER_PHONE} / {DEMO_PASSWORD}\nLapsed subscriber: {LAPSED_PHONE} / {DEMO_PASSWORD}"))
+
+    def demo_accounts(self):
+        """Safe to run again. One subscriber with time left, and one whose subscription has ended."""
+        plan = SubscriptionPlan.objects.filter(duration_days=30).first()
+        site = SiteSettings.objects.get_or_create(pk=1)[0]
+        if not site.teacher_name:
+            self.site()
+        now = timezone.now()
+        for phone, first, days in ((SUBSCRIBER_PHONE, "Neema", 25), (LAPSED_PHONE, "Baraka", -5)):
+            if User.objects.filter(username=phone).exists():
+                continue
+            user = User.objects.create_student(phone, DEMO_PASSWORD, first_name=first, last_name="Demo")
+            Entitlement.objects.create(user=user, kind="subscription", plan=plan, starts_at=now - timedelta(days=35),
+                                       expires_at=now + timedelta(days=days), is_active=days > 0)
 
     def site(self):
         s = SiteSettings.objects.get_or_create(pk=1)[0]
         s.contact_email, s.contact_phone = "hello@darasa.example", "+255 754 000 001"
+        s.contact_whatsapp = "255754000001"
+        s.teacher_name, s.teacher_title = "Mwalimu Amani", "Physics and maths teacher"
+        s.teacher_bio = ("I have taught secondary school science in Arusha and Dar es Salaam, and I still believe any "
+                         "idea can be explained simply. Every lesson here is one I would give in my own classroom.")
+        s.teacher_credentials, s.teacher_years = "BSc Ed, University of Dar es Salaam", 12
+        s.teacher_subjects = ["Physics", "Mathematics", "Study skills"]
         s.social_links = {"instagram": "https://instagram.com/", "youtube": "https://youtube.com/"}
         s.faq = [
             {"q": "Do I need an account to read free lessons?", "a": "No. Free lessons are open to everyone."},

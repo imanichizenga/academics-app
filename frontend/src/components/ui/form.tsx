@@ -2,15 +2,28 @@
 import * as CheckboxP from "@radix-ui/react-checkbox";
 import * as SelectP from "@radix-ui/react-select";
 import * as SwitchP from "@radix-ui/react-switch";
-import { Check, ChevronDown } from "lucide-react";
-import { forwardRef, useId, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
+import { Check, ChevronDown, Eye, EyeOff } from "lucide-react";
+import { forwardRef, useId, useState, type InputHTMLAttributes, type ReactNode, type TextareaHTMLAttributes } from "react";
+import { useT } from "@/lib/providers";
 import { cn, formatPhoneInput } from "@/lib/utils";
+import { IconButton } from "./button";
 
 const fieldBase =
   "w-full rounded-lg border border-border-strong bg-surface text-fg placeholder:text-fg-3 transition-colors focus:border-primary focus:outline-none focus:ring-[3px] focus:ring-primary/15 disabled:opacity-60 aria-[invalid=true]:border-danger";
 
 export const Input = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }>(function Input({ className, invalid, ...p }, ref) {
   return <input ref={ref} aria-invalid={invalid || undefined} className={cn(fieldBase, "h-11 px-3 text-base md:h-10 md:text-sm", className)} {...p} />;
+});
+/** Every password box in the product: a show/hide toggle sits inside the field. */
+export const PasswordInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement> & { invalid?: boolean }>(function PasswordInput({ className, ...p }, ref) {
+  const [shown, setShown] = useState(false);
+  const { t } = useT();
+  return (
+    <div className="relative">
+      <Input ref={ref} type={shown ? "text" : "password"} spellCheck={false} className={cn("pr-11", className)} {...p} />
+      <IconButton label={shown ? t.common.hidePassword : t.common.showPassword} aria-pressed={shown} size="icon-sm" className="absolute right-1 top-1/2 -translate-y-1/2 active:-translate-y-1/2" onClick={() => setShown((v) => !v)}>{shown ? <EyeOff /> : <Eye />}</IconButton>
+    </div>
+  );
 });
 export const Textarea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement> & { invalid?: boolean }>(function Textarea({ className, invalid, ...p }, ref) {
   return <textarea ref={ref} aria-invalid={invalid || undefined} className={cn(fieldBase, "min-h-24 px-3 py-2.5 text-base md:text-sm", className)} {...p} />;

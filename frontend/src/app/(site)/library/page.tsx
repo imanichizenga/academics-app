@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import { getT } from "@/lib/server";
 import { Library } from "@/components/site/library";
 
-export const metadata: Metadata = { title: "My learning", robots: { index: false } };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: t.nav.myLearning, robots: { index: false } };
+}
 export default function LibraryPage() { return <Library />; }

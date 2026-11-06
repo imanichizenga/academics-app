@@ -16,6 +16,7 @@ router.register("orders", v.AdminOrderViewSet, basename="admin-order")
 router.register("plans", v.AdminPlanViewSet, basename="admin-plan")
 router.register("comments", v.AdminCommentViewSet, basename="admin-comment")
 router.register("audit", v.AuditViewSet, basename="admin-audit")
+router.register("notification-logs", v.NotificationLogViewSet, basename="admin-notification-log")
 urlpatterns = [
     path("dashboard/", v.DashboardView.as_view()),
     path("search/", v.CommandSearchView.as_view()),
@@ -25,6 +26,9 @@ urlpatterns = [
     path("settings/payments/test/", v.GatewayTestView.as_view()),
     path("settings/payments/live-test/", v.GatewayLiveTestView.as_view()),
     path("settings/payments/webhooks/", v.WebhookEventsView.as_view()),
+    path("settings/notifications/", v.NotificationConfigView.as_view()),
+    path("settings/notifications/test/", v.NotificationTestView.as_view()),
+    path("settings/notifications/templates/", v.NotificationTemplatesView.as_view()),
     path("settings/storage/", v.StorageConfigView.as_view()),
     path("settings/storage/test/", v.StorageTestView.as_view()),
     *router.urls,

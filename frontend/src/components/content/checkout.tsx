@@ -1,20 +1,22 @@
 "use client";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle2, Clock, KeyRound, Loader2, Smartphone } from "lucide-react";
+import { AlertCircle, CheckCircle2, Clock, KeyRound, Loader2, Receipt, Smartphone } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 import { z } from "zod";
 import { Button } from "@/components/ui/button";
+import { CopyButton } from "@/components/ui/copy-button";
 import { Field, Input, PhoneInput } from "@/components/ui/form";
 import { Link } from "@/components/ui/link";
 import { Sheet } from "@/components/ui/overlay";
 import { ApiError, api, post } from "@/lib/api";
-import { useSession, useSite } from "@/lib/providers";
-import type { Order } from "@/lib/types";
-import { money, normalizePhone } from "@/lib/utils";
+import { useSession, useSite, useT } from "@/lib/providers";
+import type { Dict } from "@/lib/i18n";
+import type { Order, Plan } from "@/lib/types";
+import { formatPhone, localPhone, money, normalizePhone } from "@/lib/utils";
 
 export type CheckoutItem = { type: "content"; id: string; title: string; price: number; slug: string } | { type: "plan"; id: string; title: string; price: number; days: number; slug?: string };
 type Stage = "form" | "waiting" | "success" | "failed";
@@ -22,13 +24,15 @@ const STORE = "checkout";
 const NETWORKS = ["M-Pesa", "Airtel Money", "Mixx by Yas", "Halotel"];
 const PROMPT_SECONDS = 120;
 
-const schema = z.object({
-  phone: z.string().refine((v) => normalizePhone(v), "Enter a Tanzanian mobile number, like 0712 345 678"),
-  first_name: z.string().trim().min(1, "Enter your first name").max(80),
-  last_name: z.string().trim().min(1, "Enter your last name").max(80),
-  email: z.string().trim().email("Enter a valid email").or(z.literal("")),
+const makeSchema = (t: Dict) => z.object({
+  phone: z.string().refine((v) => normalizePhone(v), t.checkout.enterPhone),
+  first_name: z.string().trim().min(1, t.checkout.enterFirst).max(80),
+  last_name: z.string().trim().min(1, t.checkout.enterLast).max(80),
+  email: z.string().trim().email(t.common.validEmail).or(z.literal("")),
 });
-type Values = z.infer<typeof schema>;
+type Values = z.infer<ReturnType<typeof makeSchema>>;
+/** The plan a single "subscribe" button offers: monthly if there is one, otherwise the highlighted one. */
+export const defaultPlan = (plans: Plan[]) => plans.find((p) => p.duration_days === 30) ?? plans.find((p) => p.highlighted) ?? plans[0];
 type Claim = { account_created: boolean; username: string; content_slug: string | null; login_required: boolean };
 
 const Ctx = createContext<{ open: (item: CheckoutItem) => void } | null>(null);
@@ -40,17 +44,18 @@ const clear = () => { try { sessionStorage.removeItem(STORE); } catch {} };
 function Form({ item, onCreated }: { item: CheckoutItem; onCreated: (o: Order) => void }) {
   const { user } = useSession();
   const site = useSite();
+  const { t, lang } = useT();
   const [busy, setBusy] = useState(false);
   const [key] = useState(() => crypto.randomUUID()); // one key per attempt: a double tap cannot pay twice
   const choose = site.payment_method === "let_customer_choose";
   const [method, setMethod] = useState(site.payment_method === "hosted_checkout" ? "hosted_checkout" : "ussd_push");
-  const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: { phone: user?.phone ? `0${user.phone.slice(3)}` : "", first_name: user?.first_name ?? "", last_name: user?.last_name ?? "", email: user?.email ?? "" } });
+  const form = useForm<Values>({ resolver: zodResolver(makeSchema(t)), defaultValues: { phone: formatPhone(user?.phone), first_name: user?.first_name ?? "", last_name: user?.last_name ?? "", email: user?.email ?? "" } });
   const { errors } = form.formState;
   const submit = form.handleSubmit(async (v) => {
     if (busy) return;
     setBusy(true);
     try {
-      const body = { ...v, phone: normalizePhone(v.phone), order_type: item.type === "plan" ? "subscription" : "content_purchase", [item.type === "plan" ? "plan" : "content"]: item.id, method };
+      const body = { ...v, phone: normalizePhone(v.phone), order_type: item.type === "plan" ? "subscription" : "content_purchase", [item.type === "plan" ? "plan" : "content"]: item.id, method, language: lang };
       const order = await post<Order>("/checkout/", body, { "Idempotency-Key": key });
       onCreated(order);
     } catch (e) {
@@ -63,26 +68,26 @@ function Form({ item, onCreated }: { item: CheckoutItem; onCreated: (o: Order) =
   return (
     <form onSubmit={submit} className="space-y-4" noValidate>
       <div className="flex items-center justify-between gap-3 rounded-xl bg-surface-2 p-3.5">
-        <div className="min-w-0"><div className="truncate text-sm font-medium">{item.title}</div><div className="text-[13px] text-fg-2">{item.type === "plan" ? `${item.days} days of full access` : "One-time purchase"}</div></div>
+        <div className="min-w-0"><div className="truncate text-sm font-medium">{item.title}</div><div className="text-[13px] text-fg-2">{item.type === "plan" ? t.checkout.days(item.days) : t.checkout.once}</div></div>
         <div className="shrink-0 text-right font-semibold tabular-nums">{money(item.price)}</div>
       </div>
-      <Field label="Mobile money number" error={errors.phone?.message} hint="We send a payment prompt to this phone">
+      <Field label={t.checkout.number} error={errors.phone?.message} hint={t.checkout.promptHint}>
         <Controller control={form.control} name="phone" render={({ field }) => <PhoneInput {...field} invalid={!!errors.phone} autoFocus={!user} name="phone" />} />
       </Field>
       <div className="grid grid-cols-2 gap-3">
-        <Field label="First name" error={errors.first_name?.message}><Input autoComplete="given-name" invalid={!!errors.first_name} {...form.register("first_name")} /></Field>
-        <Field label="Last name" error={errors.last_name?.message}><Input autoComplete="family-name" invalid={!!errors.last_name} {...form.register("last_name")} /></Field>
+        <Field label={t.common.firstName} error={errors.first_name?.message}><Input autoComplete="given-name" invalid={!!errors.first_name} {...form.register("first_name")} /></Field>
+        <Field label={t.common.lastName} error={errors.last_name?.message}><Input autoComplete="family-name" invalid={!!errors.last_name} {...form.register("last_name")} /></Field>
       </div>
-      <Field label="Email (optional)" error={errors.email?.message}><Input type="email" inputMode="email" autoComplete="email" invalid={!!errors.email} {...form.register("email")} /></Field>
+      <Field label={t.checkout.emailOptional} error={errors.email?.message}><Input type="email" inputMode="email" autoComplete="email" invalid={!!errors.email} {...form.register("email")} /></Field>
       {choose && (
         <fieldset className="grid grid-cols-2 gap-2">
-          <legend className="sr-only">Payment method</legend>
-          {[["ussd_push", "Prompt on my phone"], ["hosted_checkout", "Secure payment page"]].map(([value, label]) => (
+          <legend className="sr-only">{t.checkout.method}</legend>
+          {[["ussd_push", t.checkout.methodPush], ["hosted_checkout", t.checkout.methodPage]].map(([value, label]) => (
             <button key={value} type="button" aria-pressed={method === value} onClick={() => setMethod(value)} className={`h-11 rounded-lg border text-[13px] font-medium ${method === value ? "border-primary bg-primary-soft text-primary-ink" : "border-border-strong text-fg-2"}`}>{label}</button>
           ))}
         </fieldset>
       )}
-      <Button type="submit" size="lg" className="w-full" loading={busy}>Pay {money(item.price)}</Button>
+      <Button type="submit" size="lg" className="w-full" loading={busy}>{t.checkout.pay(money(item.price))}</Button>
       <p className="text-center text-[13px] text-fg-3">{NETWORKS.join(" · ")}</p>
     </form>
   );
@@ -100,6 +105,7 @@ function PhoneArt() {
 
 function Waiting({ order, token, onDone, onCancel }: { order: Order; token: string; onDone: (o: Order) => void; onCancel: () => void }) {
   const site = useSite();
+  const { t } = useT();
   const [left, setLeft] = useState(PROMPT_SECONDS);
   const status = useQuery({
     queryKey: ["order", order.id], refetchInterval: Math.max(site.poll_seconds, 2) * 1000, refetchIntervalInBackground: true, gcTime: 0,
@@ -111,7 +117,7 @@ function Waiting({ order, token, onDone, onCancel }: { order: Order; token: stri
   const [cancelling, setCancelling] = useState(false);
   const resend = async () => {
     setResending(true);
-    try { await post(`/orders/${order.id}/resend/`, { claim_token: token }); toast.success("Prompt sent again"); setLeft(PROMPT_SECONDS); }
+    try { await post(`/orders/${order.id}/resend/`, { claim_token: token }); toast.success(t.checkout.resent); setLeft(PROMPT_SECONDS); }
     catch (e) { toast.error((e as ApiError).message); } finally { setResending(false); }
   };
   const cancel = async () => {
@@ -123,38 +129,46 @@ function Waiting({ order, token, onDone, onCancel }: { order: Order; token: stri
   return (
     <div className="pt-2 text-center" data-testid="checkout-waiting">
       <PhoneArt />
-      <h3 className="text-lg font-semibold tracking-tight">Check your phone</h3>
-      <p className="mx-auto mt-1 max-w-xs text-sm text-fg-2">Enter your PIN on the prompt to approve {money(order.amount)}. Keep this screen open.</p>
+      <h3 className="text-lg font-semibold tracking-tight">{t.checkout.check}</h3>
+      <p className="mx-auto mt-1 max-w-xs text-sm text-fg-2">{t.checkout.enterPin(money(order.amount))}</p>
       <div className="mt-4 flex flex-wrap justify-center gap-1.5">{NETWORKS.map((n) => <span key={n} className="rounded-full border px-2.5 py-1 text-xs font-medium text-fg-2">{n}</span>)}</div>
-      <div className="mt-5 inline-flex items-center gap-1.5 text-sm tabular-nums text-fg-2" role="timer"><Clock className="size-4" aria-hidden />{left ? `Waiting for you · ${mm}:${ss}` : "No prompt yet? Send it again."}</div>
+      <div className="mt-5 inline-flex items-center gap-1.5 text-sm tabular-nums text-fg-2" role="timer"><Clock className="size-4" aria-hidden />{left ? t.checkout.waiting(`${mm}:${ss}`) : t.checkout.noPrompt}</div>
       <div className="mt-5 grid grid-cols-2 gap-2">
-        <Button variant="secondary" onClick={cancel} loading={cancelling}>Cancel</Button>
-        <Button variant={left ? "soft" : "primary"} onClick={resend} loading={resending} disabled={left > PROMPT_SECONDS - 20}>Resend prompt</Button>
+        <Button variant="secondary" onClick={cancel} loading={cancelling}>{t.common.cancel}</Button>
+        <Button variant={left ? "soft" : "primary"} onClick={resend} loading={resending} disabled={left > PROMPT_SECONDS - 20}>{t.checkout.resend}</Button>
       </div>
     </div>
   );
 }
 
-function Success({ claim, onClose, order }: { claim: Claim; onClose: () => void; order: Order }) {
+function Success({ claim, onClose, onLeave, order }: { claim: Claim; onClose: () => void; onLeave: () => void; order: Order }) {
+  const { t } = useT();
   if (claim.login_required) {
     return (
-      <Done title="Payment received">
-        <p className="text-sm text-fg-2">This number belongs to a staff account, so please log in with your password to continue.</p>
-        <Button asChild size="lg" className="mt-5 w-full"><Link href="/login">Log in</Link></Button>
+      <Done title={t.checkout.staffTitle}>
+        <p className="text-sm text-fg-2">{t.checkout.staffText}</p>
+        <Button asChild size="lg" className="mt-5 w-full"><Link href="/login">{t.common.logIn}</Link></Button>
       </Done>
     );
   }
+  const password = localPhone(claim.username);
   return (
-    <Done title="You are in" subtitle={`${order.item_title} is unlocked.`}>
+    <Done title={t.checkout.inTitle} subtitle={t.checkout.unlocked(order.item_title)}>
       {claim.account_created && (
-        <div className="mt-1 rounded-xl border bg-surface-2 p-3.5 text-left text-sm">
-          <div className="mb-1 flex items-center gap-2 font-medium"><KeyRound className="size-4 text-primary-ink" aria-hidden />Your account was created</div>
-          <p className="text-fg-2">Username: <strong className="font-semibold text-fg tabular-nums">{claim.username}</strong></p>
-          <p className="text-fg-2">Your password is your phone number. Please change it.</p>
-          <Button asChild variant="secondary" className="mt-3 w-full"><Link href="/change-password" onClick={onClose}>Change password now</Link></Button>
+        <div className="mt-1 rounded-xl border bg-surface-2 p-3.5 text-left text-sm" data-testid="credentials">
+          <div className="mb-2 flex items-center gap-2 font-medium"><KeyRound className="size-4 text-primary-ink" aria-hidden />{t.checkout.created}</div>
+          <div className="flex items-center justify-between gap-2">
+            <p className="min-w-0 text-fg-2">
+              <span className="block">{t.checkout.phoneLine}: <strong className="font-semibold tabular-nums text-fg">{formatPhone(claim.username)}</strong></span>
+              <span className="block">{t.checkout.passwordLine}: <strong className="font-semibold tabular-nums text-fg">{password}</strong> {t.checkout.yourNumber}</span>
+            </p>
+            <CopyButton text={password} label={t.banner.copyPassword} className="shrink-0" />
+          </div>
+          <Button asChild variant="secondary" className="mt-3 w-full"><Link href="/change-password" onClick={onLeave}>{t.checkout.changeNow}</Link></Button>
         </div>
       )}
-      <Button size="lg" className="mt-4 w-full" onClick={onClose}>{claim.content_slug ? "Start learning" : "Go to my library"}</Button>
+      <Button size="lg" className="mt-4 w-full" onClick={onClose}>{claim.content_slug ? t.checkout.startLearning : t.checkout.goLibrary}</Button>
+      <Button asChild variant="ghost" className="mt-2 w-full"><Link href={`/library/receipts/${order.id}`} onClick={onLeave}><Receipt />{t.checkout.viewReceipt}</Link></Button>
     </Done>
   );
 }
@@ -168,25 +182,19 @@ function Done({ title, subtitle, children }: { title: string; subtitle?: string;
     </div>
   );
 }
-const FAIL_COPY: Record<string, [string, string]> = {
-  failed: ["The payment did not go through", "It was declined or timed out. You were not charged."],
-  expired: ["The prompt expired", "We did not get an approval in time. You were not charged."],
-  voided: ["The payment was cancelled", "You were not charged."],
-  cancelled: ["Payment cancelled", "You cancelled this payment. If you already approved it, it will still unlock."],
-};
 function Failed({ order, onRetry, onClose }: { order: Order; onRetry: () => void; onClose: () => void }) {
-  const [title, text] = FAIL_COPY[order.status] ?? FAIL_COPY.failed;
+  const { t } = useT();
+  const copy = { failed: t.checkout.failed, expired: t.checkout.expired, voided: t.checkout.voided, cancelled: t.checkout.cancelled };
+  const [title, text] = copy[order.status as keyof typeof copy] ?? t.checkout.failed;
   return (
     <div className="pt-2 text-center" data-testid="checkout-failed">
       <div className="mx-auto mb-4 grid size-16 place-items-center rounded-full bg-danger-soft text-danger"><AlertCircle className="size-8" aria-hidden /></div>
       <h3 className="text-lg font-semibold tracking-tight">{title}</h3>
       <p className="mx-auto mt-1 max-w-xs text-sm text-fg-2">{order.failure_reason || text}</p>
-      <div className="mt-5 grid grid-cols-2 gap-2"><Button variant="secondary" onClick={onClose}>Close</Button><Button onClick={onRetry}>Try again</Button></div>
+      <div className="mt-5 grid grid-cols-2 gap-2"><Button variant="secondary" onClick={onClose}>{t.common.close}</Button><Button onClick={onRetry}>{t.common.tryAgain}</Button></div>
     </div>
   );
 }
-
-const TITLES: Record<Stage, string> = { form: "Complete your payment", waiting: "Approve on your phone", success: "Payment successful", failed: "Payment not completed" };
 
 export function CheckoutProvider({ children }: { children: ReactNode }) {
   const [item, setItem] = useState<CheckoutItem | null>(null);
@@ -197,6 +205,8 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
   const token = useRef("");
   const client = useQueryClient();
   const router = useRouter();
+  const { t } = useT();
+  const titles: Record<Stage, string> = { form: t.checkout.complete, waiting: t.checkout.approve, success: t.checkout.successful, failed: t.checkout.notCompleted };
 
   const finish = useCallback(async (done: Order) => {
     setOrder(done);
@@ -208,12 +218,12 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
       setStage("success");
     } catch (e) {
       const error = e as ApiError;
-      toast.error(error.code === "claim_expired" ? "Payment received. Please log in to continue." : error.message);
+      toast.error(error.code === "claim_expired" ? t.checkout.claimExpired : error.message);
       setClaim({ account_created: false, username: "", content_slug: done.content_slug, login_required: true });
       setStage("success");
     }
     clear();
-  }, [client]);
+  }, [client, t]);
 
   const created = useCallback((o: Order) => {
     token.current = o.claim_token ?? "";
@@ -243,10 +253,10 @@ export function CheckoutProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={value}>
       {children}
-      <Sheet open={open} onOpenChange={(v) => { if (!v) close(); }} title={TITLES[stage]} dismissible={stage !== "waiting"} size="sm">
+      <Sheet open={open} onOpenChange={(v) => { if (!v) close(); }} title={titles[stage]} dismissible={stage !== "waiting"} size="sm">
         {item && stage === "form" && <Form key={item.id} item={item} onCreated={created} />}
         {order && stage === "waiting" && <Waiting order={order} token={token.current} onDone={finish} onCancel={() => { clear(); setOrder({ ...order, status: "cancelled" }); setStage("failed"); }} />}
-        {order && claim && stage === "success" && <Success claim={claim} order={order} onClose={close} />}
+        {order && claim && stage === "success" && <Success claim={claim} order={order} onClose={close} onLeave={() => setOpen(false)} />}
         {order && stage === "failed" && item && <Failed order={order} onRetry={() => start(item)} onClose={() => setOpen(false)} />}
       </Sheet>
     </Ctx.Provider>

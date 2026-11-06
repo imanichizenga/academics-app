@@ -18,7 +18,7 @@ class MeSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ["id", "username", "phone", "first_name", "last_name", "email", "role", "must_change_password",
-                  "source", "date_joined"]
+                  "source", "date_joined", "language"]
         read_only_fields = ["id", "username", "phone", "role", "must_change_password", "source", "date_joined"]
 
 

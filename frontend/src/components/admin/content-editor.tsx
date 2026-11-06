@@ -215,7 +215,7 @@ export function ContentEditor({ id }: { id: string }) {
 function EditorInner({ initial, reload }: { initial: Doc; reload: () => void }) {
   const [doc, setDoc] = useState<Doc>(initial);
   const [save, setSave] = useState<"saved" | "dirty" | "saving" | "error">("saved");
-  const [savedAt, setSavedAt] = useState<number>(Date.now());
+  const [savedAt, setSavedAt] = useState<number | null>(null); // only set by a real save in this session
   const [, tick] = useState(0);
   const [words, setWords] = useState(initial.word_count ?? 0);
   const [panel, setPanel] = useState(false);
@@ -275,7 +275,7 @@ function EditorInner({ initial, reload }: { initial: Doc; reload: () => void }) 
     await flush(true);
     return patch<Doc>(`/admin/contents/${docRef.current.id}/`, v);
   }, { success: (r) => (r.status === "published" ? "Published" : r.status === "scheduled" ? "Scheduled" : "Moved to drafts"), onSuccess: (r) => { setDoc((d) => ({ ...d, status: r.status, scheduled_for: r.scheduled_for })); setSchedule(false); } });
-  const statusText = save === "saving" ? "Saving…" : save === "dirty" ? "Unsaved changes" : save === "error" ? "Not saved" : `Saved ${timeAgo(new Date(savedAt).toISOString())}`;
+  const statusText = save === "saving" ? "Saving…" : save === "dirty" ? "Unsaved changes" : save === "error" ? "Not saved" : savedAt ? `Saved ${timeAgo(new Date(savedAt).toISOString())}` : `Last saved ${dateTime(doc.updated_at)}`;
   const settings = <Panel doc={doc} set={change} />;
   const leave = (e: React.MouseEvent) => { if (Object.keys(dirty.current).length) flush(); e.stopPropagation(); };
   return (
@@ -284,7 +284,7 @@ function EditorInner({ initial, reload }: { initial: Doc; reload: () => void }) 
         <Link href="/admin/contents" onClick={leave} className="-ml-2 inline-flex h-9 items-center gap-1 rounded-md px-2 text-sm text-fg-2 hover:text-fg"><ChevronLeft className="size-4" aria-hidden />Content</Link>
         <Badge tone={doc.status === "published" ? "success" : doc.status === "scheduled" ? "info" : "neutral"}>{doc.status}</Badge>
         <span role="status" data-testid="save-status" className={cn("inline-flex items-center gap-1 text-[13px] text-fg-3", save === "error" && "text-danger")}>{save === "saving" && <Loader2 className="size-3 animate-spin" aria-hidden />}{statusText}</span>
-        <div className="ml-auto flex items-center gap-1">
+        <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
           <IconButton label="Revision history" onClick={() => setHistory(true)}><History /></IconButton>
           <IconButton label="Preview" onClick={async () => { await flush(); setPreview(true); }}><Eye /></IconButton>
           <IconButton label="Settings" className="lg:hidden" onClick={() => setPanel(true)}><Settings2 /></IconButton>

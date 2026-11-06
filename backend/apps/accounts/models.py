@@ -38,6 +38,7 @@ class User(AbstractUser):
     last_seen = models.DateTimeField(null=True, blank=True)
     source = models.CharField(max_length=30, choices=Source.choices, default=Source.SELF_SIGNUP, db_index=True)
     token_version = models.PositiveIntegerField(default=0)
+    language = models.CharField(max_length=2, choices=[("en", "English"), ("sw", "Kiswahili")], blank=True)
     updated_at = models.DateTimeField(auto_now=True)
     objects = UserManager()
 

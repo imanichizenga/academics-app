@@ -45,7 +45,7 @@ def _new_order(**fields):
 
 
 def create_order(*, order_type, phone, first_name, last_name, email="", content=None, plan=None, user=None,
-                 client_key=None, method="ussd_push", amount=None):
+                 client_key=None, method="ussd_push", amount=None, language=""):
     """Create the Order. Prices come from the database only, never from the client.
 
     Returns (order, claim_token, created). A repeat client_key returns the same order with a rotated
@@ -72,7 +72,7 @@ def create_order(*, order_type, phone, first_name, last_name, email="", content=
         id=uuid.uuid4(), order_type=order_type, phone=phone, first_name=first_name, last_name=last_name, email=email,
         content=content, plan=plan, item_title=title, plan_duration_days=plan_days, access_duration_days=access_days,
         amount=amount, currency=gateway.currency, user=user, client_key=client_key, method=method,
-        expires_at=timezone.now() + timedelta(hours=gateway.expiry_hours),
+        language=language, expires_at=timezone.now() + timedelta(hours=gateway.expiry_hours),
     )
     order.log("created", f"{order.currency} {order.amount}")
     try:
@@ -179,7 +179,8 @@ def find_or_create_user(order):
     if user:
         return user, False
     new = User(username=order.phone, phone=order.phone, first_name=order.first_name, last_name=order.last_name,
-               email=order.email, must_change_password=True, source=User.Source.AUTO_CREATED)
+               email=order.email, must_change_password=True, source=User.Source.AUTO_CREATED,
+               language=order.language)
     new.set_password(order.phone)
     try:
         with transaction.atomic():
@@ -316,9 +317,13 @@ def reconcile(order):
 
 
 def send_receipt(order):
-    site = SiteSettings.load()
-    message = (f"{site.site_name}: payment of {order.currency} {order.amount:,} received for {order.item_title}. "
-               f"Ref {str(order.pk)[:8]}. Thank you!")
-    notifications.send_sms(order.phone, message)
-    if order.email:
-        notifications.send_email(order.email, f"Your {site.site_name} receipt", message)
+    from apps.core.phone import local_phone
+
+    language = (order.user.language if order.user_id else "") or order.language
+    base = settings.FRONTEND_URL
+    notifications.notify("payment_receipt", phone=order.phone, email=order.email, language=language,
+                         amount=f"{order.currency} {order.amount:,}", item=order.item_title,
+                         reference=str(order.pk)[:8], receipt_url=f"{base}/library/receipts/{order.pk}")
+    if order.account_created:
+        notifications.notify("account_created", phone=order.phone, email=order.email, language=language,
+                             phone_number=local_phone(order.phone), login_url=f"{base}/login")

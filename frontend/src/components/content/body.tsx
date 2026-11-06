@@ -6,8 +6,9 @@ import { useCallback, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { ApiError, api } from "@/lib/api";
+import { useSite, useT } from "@/lib/providers";
 import { fileSize } from "@/lib/utils";
-import { useCheckout } from "./checkout";
+import { defaultPlan, useCheckout } from "./checkout";
 import { AudioPlayer } from "./audio";
 
 const VideoPlayer = dynamic(() => import("./video").then((m) => m.VideoPlayer), { ssr: false, loading: () => <div className="skeleton aspect-video rounded-xl" /> });
@@ -16,6 +17,8 @@ const PdfViewer = dynamic(() => import("./pdf").then((m) => m.PdfViewer), { ssr:
 /** The whole click path for an attached file: signed URL on access, paywall sheet when locked. */
 export function useFileDownload() {
   const { open } = useCheckout();
+  const site = useSite();
+  const { t } = useT();
   const [busy, setBusy] = useState(false);
   const start = useCallback(async (assetId: string) => {
     if (busy) return;
@@ -30,11 +33,17 @@ export function useFileDownload() {
       link.remove();
     } catch (e) {
       const error = e as ApiError;
-      const item = error.data.content as { id: string; slug: string; title: string; price: number | null } | undefined;
-      if (error.code === "paywall" && item?.price != null) open({ type: "content", id: item.id, title: item.title, price: item.price, slug: item.slug });
-      else toast.error(error.message);
+      const item = error.data.content as { id: string; slug: string; title: string; price: number | null; included_in_subscription: boolean } | undefined;
+      const plan = item?.included_in_subscription && site.checkout_available ? defaultPlan(site.plans) : undefined;
+      if (error.code !== "paywall") toast.error(error.message);
+      else if (item?.price != null) open({ type: "content", id: item.id, title: item.title, price: item.price, slug: item.slug });
+      else if (plan) open({ type: "plan", id: plan.id, title: t.pricing.planTitle(plan.name), price: plan.effective_price, days: plan.duration_days });
+      else {
+        toast(t.lesson.unlockFile);
+        document.getElementById("paywall")?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
     } finally { setBusy(false); }
-  }, [busy, open]);
+  }, [busy, open, site, t]);
   return { start, busy };
 }
 
@@ -50,11 +59,12 @@ function FileLink({ assetId, filename, size, children }: { assetId: string; file
 }
 export function FileCard({ assetId, filename, size, kind }: { assetId: string; filename: string; size: number; kind: string }) {
   const { start, busy } = useFileDownload();
+  const { t } = useT();
   return (
     <div className="not-prose flex items-center gap-3 rounded-xl border bg-surface p-3 font-sans">
       <div className="grid size-11 shrink-0 place-items-center rounded-lg bg-primary-soft text-primary-ink"><FileIcon className="size-5" aria-hidden /></div>
       <div className="min-w-0 flex-1"><div className="truncate text-sm font-medium">{filename}</div><div className="text-[13px] text-fg-3">{kind.toUpperCase()} · {fileSize(size)}</div></div>
-      <Button variant="secondary" size="sm" loading={busy} onClick={() => start(assetId)}><Download />Download</Button>
+      <Button variant="secondary" size="sm" loading={busy} onClick={() => start(assetId)}><Download />{t.lesson.download}</Button>
     </div>
   );
 }

@@ -74,6 +74,20 @@ class CookieJWTAuthentication(JWTAuthentication):
         return type(user).objects.filter(pk=data["target"]).first()
 
 
+def staff_session(request):
+    """True when the request carries a valid staff session. For middleware, which runs before DRF."""
+    raw = request.COOKIES.get(ACCESS_COOKIE)
+    if not raw:
+        return False
+    auth = CookieJWTAuthentication()
+    try:
+        token = auth.get_validated_token(raw)
+        user = auth.get_user(token)
+    except (InvalidToken, TokenError, exceptions.AuthenticationFailed):
+        return False
+    return token.get("tv", 0) == user.token_version and user.is_staff_role
+
+
 class CookieAuthScheme(OpenApiAuthenticationExtension):
     target_class = "apps.accounts.authentication.CookieJWTAuthentication"
     name = "cookieAuth"

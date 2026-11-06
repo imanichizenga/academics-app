@@ -17,6 +17,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.core import notifications
 from apps.core.api import ApiError, LoginThrottle, OtpThrottle
 from apps.core.models import SiteSettings
+from apps.core.phone import InvalidPhone, normalize_phone
 
 from . import serializers as s
 from .authentication import (IMPERSONATE_COOKIE, REFRESH_COOKIE, CookieJWTAuthentication, clear_session, issue_session,
@@ -36,6 +37,21 @@ def session_payload(user):
     return {"user": s.MeSerializer(user).data}
 
 
+def _first_password_login(request, phone, entered):
+    """Auto-created accounts start with 255XXXXXXXXX as the password, but people type 07XX.
+
+    Only applies while the password is still the unchanged starter one: authenticate() confirms that.
+    """
+    user = User.objects.filter(username=phone, must_change_password=True).first()
+    if user is None:
+        return None
+    try:
+        typed = normalize_phone(entered)
+    except InvalidPhone:
+        return None
+    return authenticate(request, username=phone, password=typed) if typed == user.phone else None
+
+
 class LoginView(APIView):
     authentication_classes = []
     throttle_classes = [LoginThrottle]
@@ -48,7 +64,9 @@ class LoginView(APIView):
         fail_key = f"login_fail:{phone}"
         if cache.get(fail_key, 0) >= MAX_FAILED_LOGINS:
             raise ApiError("Too many wrong attempts. Please wait 15 minutes and try again.", "locked", 429)
-        user = authenticate(request, username=phone, password=ser.validated_data["password"])
+        password = ser.validated_data["password"]
+        user = authenticate(request, username=phone, password=password) or _first_password_login(
+            request, phone, password)
         if user is None:
             cache.add(fail_key, 0, FAILED_LOGIN_WINDOW)
             cache.incr(fail_key)
@@ -185,11 +203,15 @@ def _otp_key(phone):
 
 
 class OtpRequestView(APIView):
-    """Password reset by SMS. Stays inert until an SMS provider is registered in apps.core.notifications."""
+    """Password reset by SMS. Stays inert until SMS is enabled in Settings → Notifications."""
 
     authentication_classes = []
     throttle_classes = [OtpThrottle]
     serializer_class = s.OtpRequestSerializer
+
+    def get_throttles(self):
+        # Only sending costs money. The forgot page must still load after a few visits.
+        return super().get_throttles() if self.request.method == "POST" else []
 
     def get(self, request):
         return Response({"available": notifications.has_provider("sms")})
@@ -201,10 +223,11 @@ class OtpRequestView(APIView):
         ser = s.OtpRequestSerializer(data=request.data)
         ser.is_valid(raise_exception=True)
         phone = ser.validated_data["phone"]
-        if User.objects.filter(username=phone, is_active=True).exists():
+        user = User.objects.filter(username=phone, is_active=True).first()
+        if user:
             code = f"{secrets.randbelow(1_000_000):06d}"
             cache.set(_otp_key(phone), {"h": hashlib.sha256(code.encode()).hexdigest(), "n": 0}, 600)
-            notifications.send_sms(phone, f"Your password reset code is {code}. It expires in 10 minutes.")
+            notifications.notify("otp_code", phone=phone, language=user.language, code=code)
         return Response({"ok": True})
 
 

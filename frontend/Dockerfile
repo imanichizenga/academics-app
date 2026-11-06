@@ -10,6 +10,7 @@ RUN pnpm build
 
 FROM node:22-alpine
 ENV NODE_ENV=production
+ENV HOSTNAME=0.0.0.0
 WORKDIR /app
 COPY --from=build /app/.next/standalone ./
 COPY --from=build /app/.next/static ./.next/static

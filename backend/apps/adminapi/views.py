@@ -20,7 +20,10 @@ from apps.catalog.models import Content
 from apps.catalog.serializers import public_url
 from apps.core.api import ApiError, IsAdminRole, IsEditorOrAdmin
 from apps.core.audit import diff, record, snapshot
-from apps.core.models import AuditLog, SiteSettings
+from apps.core import diagnostics as notify_diag
+from apps.core import notifications
+from apps.core.fields import mask_secret
+from apps.core.models import AuditLog, NotificationConfig, NotificationLog, NotificationTemplate, SiteSettings
 from apps.core.phone import InvalidPhone, normalize_phone
 from apps.engagement.models import Comment
 from apps.engagement.views import CommentSerializer
@@ -473,6 +476,7 @@ class AuditViewSet(viewsets.ReadOnlyModelViewSet):
 class SiteSettingsSerializer(serializers.ModelSerializer):
     logo_url = serializers.SerializerMethodField()
     favicon_url = serializers.SerializerMethodField()
+    teacher_photo_url = serializers.SerializerMethodField()
     updated_by_name = serializers.CharField(source="updated_by.get_full_name", default="", read_only=True)
 
     class Meta:
@@ -485,6 +489,14 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
 
     def get_favicon_url(self, obj):
         return public_url(obj.favicon)
+
+    def get_teacher_photo_url(self, obj):
+        return public_url(obj.teacher_photo)
+
+    def validate_teacher_subjects(self, value):
+        if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+            raise serializers.ValidationError("Enter a list of subjects.")
+        return [v.strip() for v in value if v.strip()]
 
 
 class SiteSettingsView(APIView):
@@ -573,6 +585,163 @@ class WebhookEventsView(APIView):
         rows = WebhookEvent.objects.values("id", "event_id", "type", "signature_valid", "received_at", "processed_at",
                                            "processing_error")[:50]
         return Response(list(rows))
+
+
+class NotificationConfigSerializer(serializers.ModelSerializer):
+    SECRETS = ("sms_api_key", "sms_api_secret", "smtp_password")
+    sms_api_key = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    sms_api_secret = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    smtp_password = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    sms_api_key_masked = serializers.SerializerMethodField()
+    sms_api_secret_masked = serializers.SerializerMethodField()
+    smtp_password_masked = serializers.SerializerMethodField()
+    sms_ready = serializers.BooleanField(read_only=True)
+    email_ready = serializers.BooleanField(read_only=True)
+    updated_by_name = serializers.CharField(source="updated_by.get_full_name", default="", read_only=True)
+
+    class Meta:
+        model = NotificationConfig
+        exclude = ["id", "created_at"]
+        read_only_fields = ["updated_at", "updated_by", "sms_tested_at", "sms_test_status", "sms_test_report",
+                            "email_tested_at", "email_test_status", "email_test_report"]
+
+    def get_sms_api_key_masked(self, obj):
+        return mask_secret(obj.sms_api_key)
+
+    def get_sms_api_secret_masked(self, obj):
+        return mask_secret(obj.sms_api_secret)
+
+    def get_smtp_password_masked(self, obj):
+        return mask_secret(obj.smtp_password)
+
+    def validate_generic_method(self, value):
+        if value not in ("GET", "POST", "PUT"):
+            raise serializers.ValidationError("Use GET, POST or PUT.")
+        return value
+
+    def validate_generic_headers(self, value):
+        if not isinstance(value, dict) or not all(isinstance(v, str) for v in value.values()):
+            raise serializers.ValidationError('Enter a JSON object, like {"Content-Type": "application/json"}.')
+        return value
+
+    def validate_generic_url(self, value):
+        if value and not value.startswith(("http://", "https://")):
+            raise serializers.ValidationError("Start the URL with http:// or https://.")
+        return value
+
+    def update(self, instance, validated):
+        for secret in self.SECRETS:
+            if not validated.get(secret):
+                validated.pop(secret, None)
+        return super().update(instance, validated)
+
+
+class NotificationConfigView(APIView):
+    permission_classes = [IsAdminRole]
+    serializer_class = NotificationConfigSerializer
+    FIELDS = ["sms_enabled", "sms_provider", "sms_api_key", "sms_api_secret", "sms_username", "sms_sender_id",
+              "sms_base_url", "generic_url", "generic_method", "email_enabled", "smtp_host", "smtp_port",
+              "smtp_security", "smtp_username", "smtp_password", "email_from_name", "email_from_address",
+              "reminder_days"]
+
+    def _payload(self, cfg):
+        return {**NotificationConfigSerializer(cfg).data, "steps": {
+            channel: [{"key": k, "title": notify_diag.TITLES[channel][k]} for k in keys]
+            for channel, keys in notify_diag.STEPS.items()}}
+
+    def get(self, request):
+        return Response(self._payload(NotificationConfig.load()))
+
+    def patch(self, request):
+        cfg = NotificationConfig.load()
+        before = snapshot(cfg, self.FIELDS)
+        ser = NotificationConfigSerializer(cfg, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save(updated_by=request.user)
+        record(request, "notifications.update", cfg, diff(before, snapshot(cfg, self.FIELDS)), label="Notifications")
+        return Response(self._payload(cfg))
+
+
+class NotificationTestView(APIView):
+    permission_classes = [IsAdminRole]
+    serializer_class = Empty
+
+    def post(self, request):
+        channel, step = request.data.get("channel"), request.data.get("step")
+        if channel not in notify_diag.STEPS or step not in notify_diag.STEPS[channel]:
+            raise ApiError("Unknown step.")
+        to = str(request.data.get("to") or "").strip()
+        if channel == "sms" and to:
+            try:
+                to = normalize_phone(to)
+            except InvalidPhone as exc:
+                raise ApiError(str(exc), "invalid_phone") from exc
+        cfg = NotificationConfig.load()
+        outcome = notify_diag.run_step(cfg, channel, step, to)
+        if step == notify_diag.STEPS[channel][-1]:
+            record(request, "notifications.test", cfg, {"channel": channel, "status": outcome["status"]},
+                   label="Notifications")
+        return Response({"step": outcome})
+
+
+class NotificationTemplateSerializer(serializers.ModelSerializer):
+    label = serializers.SerializerMethodField()
+    placeholders = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NotificationTemplate
+        fields = ["key", "label", "placeholders", "subject_en", "subject_sw", "body_en", "body_sw", "is_enabled"]
+        read_only_fields = ["key"]
+
+    def get_label(self, obj):
+        return notifications.DEFAULTS[obj.key]["label"]
+
+    def get_placeholders(self, obj):
+        return notifications.DEFAULTS[obj.key]["placeholders"]
+
+    def validate(self, attrs):
+        unknown = notifications.unknown_placeholders(
+            self.instance.key, *[v for v in attrs.values() if isinstance(v, str)])
+        if unknown:
+            raise serializers.ValidationError(
+                {"body_en": f"Not available in this message: {', '.join('{' + u + '}' for u in unknown)}"})
+        return attrs
+
+
+class NotificationTemplatesView(APIView):
+    permission_classes = [IsAdminRole]
+    serializer_class = NotificationTemplateSerializer
+
+    def get(self, request):
+        rows = [notifications.template_for(key) for key in notifications.DEFAULTS]
+        return Response(NotificationTemplateSerializer(rows, many=True).data)
+
+    def patch(self, request):
+        key = request.data.get("key")
+        if key not in notifications.DEFAULTS:
+            raise ApiError("Unknown template.", "not_found", 404)
+        row = notifications.template_for(key)
+        ser = NotificationTemplateSerializer(row, data=request.data, partial=True)
+        ser.is_valid(raise_exception=True)
+        ser.save()
+        record(request, "notifications.template", row, label=key)
+        return Response(ser.data)
+
+
+class NotificationLogSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NotificationLog
+        fields = ["id", "created_at", "channel", "template", "recipient_masked", "status", "provider",
+                  "provider_response", "attempts"]
+
+
+class NotificationLogViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsAdminRole]
+    serializer_class = NotificationLogSerializer
+    filterset_fields = ["channel", "status", "template"]
+
+    def get_queryset(self):
+        return NotificationLog.objects.all()
 
 
 class StorageConfigView(APIView):

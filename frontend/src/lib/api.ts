@@ -1,3 +1,10 @@
+import { localizeError, type Lang } from "./i18n";
+
+let lang: Lang = "en";
+export const setApiLang = (next: Lang) => { lang = next; };
+const inAdmin = () => typeof location !== "undefined" && location.pathname.startsWith("/admin");
+const localize = (code: string, message: string) => (inAdmin() ? message : localizeError(lang, code, message));
+
 export class ApiError extends Error {
   constructor(public status: number, public code: string, message: string, public data: Record<string, unknown> = {}) {
     super(message);
@@ -22,6 +29,15 @@ export function refreshSession() {
   return refreshing;
 }
 
+/** The page was open when maintenance began: reload once, so the student gets the real maintenance page. */
+function showMaintenance() {
+  try {
+    if (Date.now() - Number(sessionStorage.getItem("maintenance-reload") ?? 0) < 30_000) return;
+    sessionStorage.setItem("maintenance-reload", String(Date.now()));
+  } catch { return; }
+  location.reload();
+}
+
 type Options = { method?: string; body?: unknown; headers?: Record<string, string>; retry?: boolean; form?: FormData };
 
 export async function api<T = any>(path: string, opts: Options = {}): Promise<T> {
@@ -36,7 +52,7 @@ export async function api<T = any>(path: string, opts: Options = {}): Promise<T>
       body: opts.form ?? (opts.body !== undefined ? JSON.stringify(opts.body) : undefined),
     });
   } catch {
-    throw new ApiError(0, "network", "You appear to be offline. Check your connection and try again.");
+    throw new ApiError(0, "network", localize("network", "You appear to be offline. Check your connection and try again."));
   }
   if (response.status === 401 && opts.retry !== false && hasSessionCookie() && !path.startsWith("/auth/refresh")) {
     if (await refreshSession()) return api<T>(path, { ...opts, retry: false });
@@ -48,7 +64,9 @@ export async function api<T = any>(path: string, opts: Options = {}): Promise<T>
     if (e.code === "password_change_required" && typeof location !== "undefined" && location.pathname !== "/change-password") {
       location.href = "/change-password?forced=1";
     }
-    throw new ApiError(response.status, e.code ?? "error", e.message ?? "Something went wrong. Please try again.", e);
+    if (e.code === "maintenance" && typeof location !== "undefined") showMaintenance();
+    const fields = Object.fromEntries(Object.entries((e.fields ?? {}) as Record<string, string>).map(([k, v]) => [k, localize("", v)]));
+    throw new ApiError(response.status, e.code ?? "error", localize(e.code ?? "", e.message ?? "Something went wrong. Please try again."), { ...e, fields });
   }
   return data as T;
 }

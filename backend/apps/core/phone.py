@@ -26,3 +26,13 @@ def normalize_phone(raw):
     ):
         raise InvalidPhone("Enter a Tanzanian mobile number.")
     return f"255{parsed.national_number}"
+
+
+def local_phone(phone):
+    """255713456789 -> 0713456789, the form people type."""
+    return f"0{phone[3:]}" if phone.startswith("255") else phone
+
+
+def mask_phone(phone):
+    local = local_phone(phone or "")
+    return f"{local[:4]} ••• {local[-3:]}" if len(local) >= 10 else "•••"

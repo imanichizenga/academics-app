@@ -3,8 +3,15 @@ from rest_framework import serializers
 from apps.accounts.serializers import PhoneField
 from apps.catalog.serializers import public_url
 from apps.core.fields import mask_secret
+from apps.core.models import SiteSettings
+from apps.core.phone import mask_phone
 
 from .models import Entitlement, Order, PaymentGatewayConfig, SubscriptionPlan
+
+
+def receipt_number(order):
+    paid = order.paid_at or order.created_at
+    return f"R{paid:%Y}-{str(order.pk)[:8].upper()}"
 
 
 class PlanSerializer(serializers.ModelSerializer):
@@ -25,6 +32,7 @@ class CheckoutSerializer(serializers.Serializer):
     last_name = serializers.CharField(max_length=80)
     email = serializers.EmailField(required=False, allow_blank=True)
     method = serializers.ChoiceField(choices=["ussd_push", "hosted_checkout"], required=False)
+    language = serializers.ChoiceField(choices=["en", "sw"], required=False)
 
 
 class OrderPublicSerializer(serializers.ModelSerializer):
@@ -59,6 +67,34 @@ class EntitlementSerializer(serializers.ModelSerializer):
 
     def get_title(self, obj):
         return obj.content.title if obj.content_id else (obj.plan.name if obj.plan_id else "Subscription")
+
+
+class ReceiptSerializer(serializers.ModelSerializer):
+    number = serializers.SerializerMethodField()
+    customer_name = serializers.SerializerMethodField()
+    phone_masked = serializers.SerializerMethodField()
+    site_name = serializers.SerializerMethodField()
+    logo_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Order
+        fields = ["id", "number", "paid_at", "item_title", "order_type", "amount", "currency", "payment_channel",
+                  "payment_provider", "external_reference", "customer_name", "phone_masked", "site_name", "logo_url"]
+
+    def get_number(self, obj):
+        return receipt_number(obj)
+
+    def get_customer_name(self, obj):
+        return f"{obj.first_name} {obj.last_name}".strip()
+
+    def get_phone_masked(self, obj):
+        return mask_phone(obj.phone)
+
+    def get_site_name(self, obj):
+        return SiteSettings.load().site_name
+
+    def get_logo_url(self, obj):
+        return public_url(SiteSettings.load().logo)
 
 
 class AdminOrderSerializer(serializers.ModelSerializer):

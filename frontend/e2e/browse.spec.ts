@@ -43,6 +43,6 @@ test("locked content shows a preview and hides the rest", async ({ page }) => {
   const html = await response!.text();
   expect(html).not.toContain("Common mistakes");
   await expect(page.getByTestId("paywall")).toContainText("Unlock the full lesson");
-  await expect(page.getByRole("button", { name: /Buy this content/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /Buy this lesson/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Subscribe/ })).toBeVisible();
 });

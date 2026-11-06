@@ -20,8 +20,8 @@ export function duration(seconds?: number | null) {
   const pad = (n: number) => String(n).padStart(2, "0");
   return h ? `${h}:${pad(m)}:${pad(s % 60)}` : `${m}:${pad(s % 60)}`;
 }
-export const dateLabel = (value?: string | null) =>
-  value ? new Date(value).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "";
+export const dateLabel = (value?: string | null, lang: "en" | "sw" = "en") =>
+  value ? new Date(value).toLocaleDateString(lang === "sw" ? "sw-TZ" : "en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "Africa/Dar_es_Salaam" }) : "";
 export const dateTime = (value?: string | null) =>
   value ? new Date(value).toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "—";
 export function timeAgo(value?: string | null) {
@@ -40,6 +40,13 @@ export function normalizePhone(raw: string) {
   else if (/^[67]/.test(d)) d = `255${d}`;
   return /^255[67]\d{8}$/.test(d) ? d : null;
 }
+/** 255713456789 -> 0713456789: the password as a student would type it. */
+export const localPhone = (phone?: string | null) => (phone?.startsWith("255") ? `0${phone.slice(3)}` : phone ?? "");
+/** The one display format for a phone number: 0713 456 789. Unknown formats pass through unchanged. */
+export function formatPhone(phone?: string | null) {
+  const local = localPhone(phone);
+  return /^0\d{9}$/.test(local) ? `${local.slice(0, 4)} ${local.slice(4, 7)} ${local.slice(7)}` : local;
+}
 export function formatPhoneInput(raw: string) {
   const keepPlus = raw.trim().startsWith("+");
   const d = raw.replace(/\D/g, "").slice(0, 12);
@@ -53,4 +60,6 @@ export function formatPhoneInput(raw: string) {
   }
   return (keepPlus ? "+" : "") + out.join(" ");
 }
+export const whatsappLink = (phone: string) => `https://wa.me/${phone.replace(/\D/g, "").replace(/^0/, "255")}`;
+export const GRID = "grid grid-cols-1 gap-2.5 md:grid-cols-2 md:gap-4 lg:grid-cols-3 xl:grid-cols-4";
 export const contentTypeLabel: Record<string, string> = { article: "Article", document: "Document", video: "Video", audio: "Audio", mixed: "Course" };

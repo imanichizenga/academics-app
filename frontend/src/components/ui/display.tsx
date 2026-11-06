@@ -22,10 +22,11 @@ export function Card({ className, children }: { className?: string; children: Re
 export function Skeleton({ className }: { className?: string }) {
   return <div aria-hidden className={cn("skeleton", className)} />;
 }
-export function Avatar({ name, className }: { name: string; className?: string }) {
+export function Avatar({ name, className, src }: { name: string; className?: string; src?: string }) {
   const initials = name.split(" ").map((s) => s[0]).filter(Boolean).slice(0, 2).join("").toUpperCase() || "?";
   return (
     <AvatarP.Root className={cn("grid size-9 shrink-0 place-items-center rounded-full bg-primary-soft text-[13px] font-semibold text-primary-ink", className)}>
+      {src && <AvatarP.Image src={src} alt="" className="size-full rounded-full object-cover" />}
       <AvatarP.Fallback>{initials}</AvatarP.Fallback>
     </AvatarP.Root>
   );

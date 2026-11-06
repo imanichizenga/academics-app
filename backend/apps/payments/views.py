@@ -18,7 +18,8 @@ from apps.core.api import ApiError, CheckoutThrottle, ClaimThrottle, ResendThrot
 from . import services
 from .access import build_context, can_access
 from .models import Order, PaymentGatewayConfig, SubscriptionPlan, WebhookEvent
-from .serializers import CheckoutSerializer, EntitlementSerializer, OrderMineSerializer, OrderPublicSerializer
+from .serializers import (CheckoutSerializer, EntitlementSerializer, OrderMineSerializer, OrderPublicSerializer,
+                          ReceiptSerializer)
 from .snippe import SnippeClient, SnippeError, verify_signature
 from .tasks import process_webhook_event
 
@@ -69,6 +70,7 @@ class CheckoutView(APIView):
             order_type=data["order_type"], phone=data["phone"], first_name=data["first_name"],
             last_name=data["last_name"], email=data.get("email", ""), content=content, plan=plan, user=user,
             client_key=request.headers.get("Idempotency-Key", "")[:64] or None, method=method,
+            language=data.get("language", ""),
         )
         if created or not (order.snippe_reference or order.snippe_session_reference):
             order = services.start_payment(order)
@@ -200,6 +202,20 @@ class MyOrdersView(APIView):
         rows = Order.objects.filter(user=request.user).select_related("content").exclude(
             order_type=Order.Type.GATEWAY_TEST)[:100]
         return Response(OrderMineSerializer(rows, many=True).data)
+
+
+class ReceiptView(APIView):
+    """The buyer's own receipt, or any receipt for an admin. Editors never see money."""
+
+    permission_classes = [permissions.IsAuthenticated]
+    serializer_class = ReceiptSerializer
+
+    def get(self, request, pk):
+        order = Order.objects.filter(pk=pk, status=Order.Status.COMPLETED).exclude(
+            order_type=Order.Type.GATEWAY_TEST).first()
+        if order is None or (order.user_id != request.user.pk and request.user.role != "admin"):
+            raise ApiError("Receipt not found.", "not_found", 404)
+        return Response(ReceiptSerializer(order).data)
 
 
 class MyAccessView(APIView):

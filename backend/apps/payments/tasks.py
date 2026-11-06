@@ -2,11 +2,12 @@ import logging
 from datetime import timedelta
 
 from celery import shared_task
+from django.conf import settings
 from django.db.models import F
 from django.utils import timezone
 
 from apps.core import notifications
-from apps.core.models import SiteSettings
+from apps.core.models import NotificationConfig
 
 from . import services
 from .models import Entitlement, Order, PaymentGatewayConfig, WebhookEvent
@@ -39,7 +40,8 @@ def reconcile_pending_orders():
         return
     now = timezone.now()
     pending = Order.objects.filter(status=Order.Status.PENDING)
-    for order in pending.filter(expires_at__lt=now - timedelta(minutes=5), snippe_reference=""):
+    for order in pending.filter(expires_at__lt=now - timedelta(minutes=5), snippe_reference="",
+                                snippe_session_reference=""):
         services.close_order(order.pk, Order.Status.EXPIRED, source="reconciliation", reason="Never reached Snippe")
     # Least recently checked first, so the batch limit cannot starve older orders.
     batch = pending.exclude(snippe_reference="", snippe_session_reference="").order_by(
@@ -58,17 +60,35 @@ def reconcile_pending_orders():
 
 @shared_task
 def expire_entitlements():
-    return Entitlement.objects.filter(is_active=True, expires_at__lt=timezone.now()).update(is_active=False)
+    now = timezone.now()
+    lapsed = list(Entitlement.objects.filter(is_active=True, expires_at__lt=now).select_related("user"))
+    Entitlement.objects.filter(pk__in=[e.pk for e in lapsed]).update(is_active=False)
+    told = set()
+    for entitlement in lapsed:
+        user = entitlement.user
+        if entitlement.kind != Entitlement.Kind.SUBSCRIPTION or user.pk in told:
+            continue
+        told.add(user.pk)
+        # A renewal stacks a new entitlement, so an old one lapsing need not mean access ended.
+        if not Entitlement.objects.filter(user=user, kind=Entitlement.Kind.SUBSCRIPTION, is_active=True,
+                                          expires_at__gt=now).exists():
+            notifications.notify("subscription_ended", phone=user.phone, email=user.email, language=user.language,
+                                 renew_url=f"{settings.FRONTEND_URL}/pricing")
+    return len(lapsed)
 
 
 @shared_task
 def send_expiry_reminders():
     now = timezone.now()
-    site = SiteSettings.load()
+    window = timedelta(days=NotificationConfig.load().reminder_days)
     due = Entitlement.objects.filter(kind="subscription", is_active=True, reminded_at=None,
-                                     expires_at__range=(now, now + timedelta(days=3))).select_related("user")
+                                     expires_at__range=(now, now + window)).select_related("user")
     for entitlement in due:
+        user = entitlement.user
+        if Entitlement.objects.filter(user=user, kind="subscription", is_active=True,
+                                      expires_at__gt=entitlement.expires_at).exists():
+            continue  # already renewed: the later entitlement gets its own reminder
         days = max(1, (entitlement.expires_at - now).days)
-        notifications.send_sms(entitlement.user.phone,
-                               f"{site.site_name}: your subscription ends in {days} day(s). Renew to keep learning.")
+        notifications.notify("subscription_ending", phone=user.phone, email=user.email, language=user.language,
+                             days=days, renew_url=f"{settings.FRONTEND_URL}/pricing")
         Entitlement.objects.filter(pk=entitlement.pk).update(reminded_at=now)

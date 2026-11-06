@@ -9,9 +9,9 @@ import { Field, Input, Textarea } from "@/components/ui/form";
 import { Link } from "@/components/ui/link";
 import { Sheet, useIsMobile } from "@/components/ui/overlay";
 import { ApiError, api, del, patch, post } from "@/lib/api";
-import { useAction, useSession, useSite } from "@/lib/providers";
+import { useAction, useSession, useSite, useT } from "@/lib/providers";
 import type { Comment, Paged } from "@/lib/types";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn, formatPhone, timeAgo } from "@/lib/utils";
 
 type Pages = { pages: Paged<Comment>[]; pageParams: unknown[] };
 
@@ -19,6 +19,7 @@ function Composer({ contentId, parent, onDone, autoFocus, initial, commentId, su
   const [body, setBody] = useState(initial ?? "");
   const [guest, setGuest] = useState("");
   const { user } = useSession();
+  const { t } = useT();
   const client = useQueryClient();
   const key = ["comments", contentId];
   const send = useAction(
@@ -26,8 +27,8 @@ function Composer({ contentId, parent, onDone, autoFocus, initial, commentId, su
     {
       onSuccess: (saved) => {
         setBody("");
-        if (saved.status === "pending") toast.success("Thanks! Your comment is waiting for approval.");
-        if (saved.status === "spam") toast.info("Your comment is being reviewed.");
+        if (saved.status === "pending") toast.success(t.comments.waiting);
+        if (saved.status === "spam") toast.info(t.comments.reviewed);
         client.invalidateQueries({ queryKey: key });
         onDone?.();
       },
@@ -42,7 +43,7 @@ function Composer({ contentId, parent, onDone, autoFocus, initial, commentId, su
     if (!commentId && user) { // optimistic: the comment appears at once and is reconciled on response
       client.setQueryData<Pages>(key, (data) => {
         if (!data) return data;
-        const fake: Comment = { id: `tmp-${Date.now()}`, body, parent: parent ?? null, status: "approved", is_pinned: false, like_count: 0, created_at: new Date().toISOString(), edited_at: null, author_name: `${user.first_name} ${user.last_name}`.trim() || user.phone, is_teacher: user.role !== "student", is_mine: true, can_edit: false, liked: false, replies: [] };
+        const fake: Comment = { id: `tmp-${Date.now()}`, body, parent: parent ?? null, status: "approved", is_pinned: false, like_count: 0, created_at: new Date().toISOString(), edited_at: null, author_name: `${user.first_name} ${user.last_name}`.trim() || formatPhone(user.phone), is_teacher: user.role !== "student", is_mine: true, can_edit: false, liked: false, replies: [] };
         const pages = data.pages.map((p, i) => {
           if (parent) return { ...p, results: p.results.map((c) => (c.id === parent ? { ...c, replies: [...c.replies, fake] } : c)) };
           return i === 0 ? { ...p, results: [...p.results, fake] } : p;
@@ -54,11 +55,11 @@ function Composer({ contentId, parent, onDone, autoFocus, initial, commentId, su
   };
   return (
     <div className="space-y-2">
-      {!user && <Field label="Your name"><Input value={guest} onChange={(e) => setGuest(e.target.value)} maxLength={80} /></Field>}
-      <Textarea aria-label="Your comment" placeholder={parent ? "Write a reply" : "Share a thought or ask a question"} value={body} onChange={(e) => setBody(e.target.value)} autoFocus={autoFocus} maxLength={4000} />
+      {!user && <Field label={t.comments.yourName}><Input value={guest} onChange={(e) => setGuest(e.target.value)} maxLength={80} /></Field>}
+      <Textarea aria-label={t.comments.yourComment} placeholder={parent ? t.comments.writeReply : t.comments.share} value={body} onChange={(e) => setBody(e.target.value)} autoFocus={autoFocus} maxLength={4000} />
       <div className="flex justify-end gap-2">
-        {onDone && <Button variant="ghost" size="sm" onClick={onDone}>Cancel</Button>}
-        <Button size="sm" onClick={submit} loading={send.isPending} disabled={!body.trim()}>{submitLabel ?? (parent ? "Reply" : "Comment")}</Button>
+        {onDone && <Button variant="ghost" size="sm" onClick={onDone}>{t.common.cancel}</Button>}
+        <Button size="sm" onClick={submit} loading={send.isPending} disabled={!body.trim()}>{submitLabel ?? (parent ? t.comments.reply : t.comments.comment)}</Button>
       </div>
     </div>
   );
@@ -66,19 +67,20 @@ function Composer({ contentId, parent, onDone, autoFocus, initial, commentId, su
 
 function Item({ c, contentId, closed, onReply }: { c: Comment; contentId: string; closed?: boolean; onReply: (c: Comment) => void }) {
   const { user } = useSession();
+  const { t } = useT();
   const [editing, setEditing] = useState(false);
   const [liked, setLiked] = useState(c.liked);
   const [likes, setLikes] = useState(c.like_count);
   const client = useQueryClient();
   const refresh = () => client.invalidateQueries({ queryKey: ["comments", contentId] });
   const like = async () => {
-    if (!user) { toast("Log in to like comments"); return; }
+    if (!user) { toast(t.comments.loginToLike); return; }
     const on = !liked;
     setLiked(on); setLikes((n) => n + (on ? 1 : -1));
     try { await post(`/comments/${c.id}/like/`); } catch (e) { setLiked(!on); setLikes((n) => n + (on ? -1 : 1)); toast.error((e as ApiError).message); }
   };
-  const remove = useAction(() => del(`/comments/${c.id}/`), { success: "Comment deleted", onSuccess: refresh });
-  const report = useAction(() => post(`/comments/${c.id}/report/`), { success: "Thanks, the teacher will take a look." });
+  const remove = useAction(() => del(`/comments/${c.id}/`), { success: t.comments.deleted, onSuccess: refresh });
+  const report = useAction(() => post(`/comments/${c.id}/report/`), { success: t.comments.reported });
   const pending = c.id.startsWith("tmp-");
   return (
     <div className={cn("flex gap-3", pending && "opacity-60")}>
@@ -86,22 +88,22 @@ function Item({ c, contentId, closed, onReply }: { c: Comment; contentId: string
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="text-sm font-medium">{c.author_name}</span>
-          {c.is_teacher && <Badge tone="primary"><GraduationCap />Teacher</Badge>}
-          {c.is_pinned && <Badge><Pin />Pinned</Badge>}
-          <span className="text-[13px] text-fg-3">{timeAgo(c.created_at)}{c.edited_at && " · edited"}</span>
+          {c.is_teacher && <Badge tone="primary"><GraduationCap />{t.comments.teacher}</Badge>}
+          {c.is_pinned && <Badge><Pin />{t.comments.pinned}</Badge>}
+          <span className="text-[13px] text-fg-3">{timeAgo(c.created_at)}{c.edited_at && ` · ${t.comments.edited}`}</span>
         </div>
-        {editing ? <div className="mt-2"><Composer contentId={contentId} commentId={c.id} initial={c.body} submitLabel="Save" autoFocus onDone={() => setEditing(false)} /></div>
+        {editing ? <div className="mt-2"><Composer contentId={contentId} commentId={c.id} initial={c.body} submitLabel={t.common.save} autoFocus onDone={() => setEditing(false)} /></div>
           : <p className="mt-0.5 whitespace-pre-wrap break-words text-[15px] leading-relaxed">{c.body}</p>}
         {!editing && !pending && (
           <div className="-ml-2 mt-0.5 flex items-center">
             <Button variant="ghost" size="sm" aria-pressed={liked} className={cn(liked && "text-danger")} onClick={like}><Heart fill={liked ? "currentColor" : "none"} />{likes || ""}</Button>
-            {!closed && <Button variant="ghost" size="sm" onClick={() => onReply(c)}><Reply />Reply</Button>}
+            {!closed && <Button variant="ghost" size="sm" onClick={() => onReply(c)}><Reply />{t.comments.reply}</Button>}
             <Dropdown>
-              <DropdownTrigger asChild><IconButton label="More" size="icon-sm"><MoreHorizontal /></IconButton></DropdownTrigger>
+              <DropdownTrigger asChild><IconButton label={t.common.more} size="icon-sm"><MoreHorizontal /></IconButton></DropdownTrigger>
               <DropdownContent>
-                {c.can_edit && <DropdownItem onSelect={() => setEditing(true)}><Pencil />Edit</DropdownItem>}
-                {c.can_edit && <DropdownItem danger onSelect={() => remove.mutate()}><Trash2 />Delete</DropdownItem>}
-                {!c.is_mine && <DropdownItem onSelect={() => report.mutate()}><Flag />Report</DropdownItem>}
+                {c.can_edit && <DropdownItem onSelect={() => setEditing(true)}><Pencil />{t.common.edit}</DropdownItem>}
+                {c.can_edit && <DropdownItem danger onSelect={() => remove.mutate()}><Trash2 />{t.common.delete}</DropdownItem>}
+                {!c.is_mine && <DropdownItem onSelect={() => report.mutate()}><Flag />{t.comments.report}</DropdownItem>}
               </DropdownContent>
             </Dropdown>
           </div>
@@ -114,6 +116,7 @@ function Item({ c, contentId, closed, onReply }: { c: Comment; contentId: string
 export function Comments({ contentId, count, canPost }: { contentId: string; count: number; canPost: boolean }) {
   const site = useSite();
   const { user } = useSession();
+  const { t } = useT();
   const mobile = useIsMobile();
   const [replyTo, setReplyTo] = useState<Comment | null>(null);
   const [composing, setComposing] = useState(false);
@@ -126,13 +129,13 @@ export function Comments({ contentId, count, canPost }: { contentId: string; cou
   const guestsOk = site.guest_comment_policy !== "login_required";
   const allowed = canPost && (user || guestsOk);
   return (
-    <section id="comments" aria-label="Comments" className="mt-12 border-t pt-8">
-      <h2 className="mb-5 text-lg font-semibold tracking-tight">Comments{count ? ` (${count})` : ""}</h2>
-      {allowed ? (mobile ? <Button variant="secondary" className="w-full justify-start text-fg-3" onClick={() => setComposing(true)}><MessageCircle />Add a comment</Button> : <Composer contentId={contentId} />)
-        : !user && !guestsOk ? <p className="rounded-xl bg-surface-2 p-4 text-sm text-fg-2"><Link href="/login" className="font-medium text-primary-ink">Log in</Link> to join the discussion.</p>
-          : <p className="rounded-xl bg-surface-2 p-4 text-sm text-fg-2">Unlock this lesson to join the discussion.</p>}
+    <section id="comments" aria-label={t.comments.title} className="mt-12 border-t pt-8">
+      <h2 className="mb-5 text-lg font-semibold tracking-tight">{t.comments.title}{count ? ` (${count})` : ""}</h2>
+      {allowed ? (mobile ? <Button variant="secondary" className="w-full justify-start text-fg-3" onClick={() => setComposing(true)}><MessageCircle />{t.comments.add}</Button> : <Composer contentId={contentId} />)
+        : !user && !guestsOk ? <p className="rounded-xl bg-surface-2 p-4 text-sm text-fg-2"><Link href="/login" className="font-medium text-primary-ink">{t.common.logIn}</Link> {t.comments.loginToJoin}</p>
+          : <p className="rounded-xl bg-surface-2 p-4 text-sm text-fg-2">{t.comments.unlockToJoin}</p>}
       <div className="mt-6 space-y-6">
-        {query.isLoading ? <Skeleton className="h-20" /> : rows.length === 0 ? <EmptyState icon={MessageCircle} title="No comments yet" text="Be the first to share a thought or ask a question." /> : rows.map((c) => (
+        {query.isLoading ? <Skeleton className="h-20" /> : rows.length === 0 ? <EmptyState icon={MessageCircle} title={t.comments.noneTitle} text={t.comments.noneText} /> : rows.map((c) => (
           <div key={c.id} className="space-y-4">
             <Item c={c} contentId={contentId} closed={!allowed} onReply={setReplyTo} />
             {c.replies.length > 0 && <div className="ml-6 space-y-4 border-l pl-4 md:ml-12">{c.replies.map((r) => <Item key={r.id} c={r} contentId={contentId} closed={!allowed} onReply={() => setReplyTo(c)} />)}</div>}
@@ -140,9 +143,9 @@ export function Comments({ contentId, count, canPost }: { contentId: string; cou
           </div>
         ))}
       </div>
-      {query.hasNextPage && <Button variant="secondary" className="mt-6 w-full" loading={query.isFetchingNextPage} onClick={() => query.fetchNextPage()}>Show more comments</Button>}
+      {query.hasNextPage && <Button variant="secondary" className="mt-6 w-full" loading={query.isFetchingNextPage} onClick={() => query.fetchNextPage()}>{t.comments.showMore}</Button>}
       {mobile && (
-        <Sheet open={composing || !!replyTo} onOpenChange={(v) => { if (!v) { setComposing(false); setReplyTo(null); } }} title={replyTo ? `Reply to ${replyTo.author_name}` : "Add a comment"}>
+        <Sheet open={composing || !!replyTo} onOpenChange={(v) => { if (!v) { setComposing(false); setReplyTo(null); } }} title={replyTo ? t.comments.replyTo(replyTo.author_name) : t.comments.add}>
           <Composer contentId={contentId} parent={replyTo?.id} autoFocus onDone={() => { setComposing(false); setReplyTo(null); }} />
         </Sheet>
       )}

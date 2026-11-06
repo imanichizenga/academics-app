@@ -93,6 +93,7 @@ class Order(models.Model):
     first_name = models.CharField(max_length=80)
     last_name = models.CharField(max_length=80)
     email = models.EmailField(blank=True)
+    language = models.CharField(max_length=2, blank=True)
     order_type = models.CharField(max_length=20, choices=Type.choices, db_index=True)
     content = models.ForeignKey(
         "catalog.Content", null=True, blank=True, on_delete=models.SET_NULL, related_name="orders"

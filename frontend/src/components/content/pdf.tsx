@@ -8,10 +8,12 @@ import "react-pdf/dist/Page/TextLayer.css";
 import { IconButton } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/display";
 import { api } from "@/lib/api";
+import { useT } from "@/lib/providers";
 
 pdfjs.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.mjs";
 
 export function PdfViewer({ assetId }: { assetId: string; slug?: string }) {
+  const { t } = useT();
   const { data } = useQuery({ queryKey: ["preview", assetId], queryFn: () => api<{ url: string; preview: boolean; pages?: number; total_pages?: number }>(`/media/${assetId}/preview/`) });
   const [pages, setPages] = useState(0);
   const [page, setPage] = useState(1);
@@ -29,19 +31,19 @@ export function PdfViewer({ assetId }: { assetId: string; slug?: string }) {
     <div data-testid="pdf-viewer" className="overflow-hidden rounded-xl border bg-surface-2 font-sans">
       <div className="sticky top-14 z-10 flex items-center justify-between gap-2 border-b bg-surface px-2 py-1 md:top-16">
         <div className="flex items-center">
-          <IconButton size="icon-sm" label="Previous page" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft /></IconButton>
+          <IconButton size="icon-sm" label={t.player.prevPage} disabled={page <= 1} onClick={() => setPage((p) => p - 1)}><ChevronLeft /></IconButton>
           <span className="px-1 text-[13px] tabular-nums text-fg-2">{page} / {pages || "–"}{data?.preview && data.total_pages ? ` of ${data.total_pages}` : ""}</span>
-          <IconButton size="icon-sm" label="Next page" disabled={page >= pages} onClick={() => setPage((p) => p + 1)}><ChevronRight /></IconButton>
+          <IconButton size="icon-sm" label={t.player.nextPage} disabled={page >= pages} onClick={() => setPage((p) => p + 1)}><ChevronRight /></IconButton>
         </div>
         <div className="flex items-center">
-          <IconButton size="icon-sm" label="Zoom out" disabled={zoom <= 0.6} onClick={() => setZoom((z) => z - 0.2)}><ZoomOut /></IconButton>
+          <IconButton size="icon-sm" label={t.player.zoomOut} disabled={zoom <= 0.6} onClick={() => setZoom((z) => z - 0.2)}><ZoomOut /></IconButton>
           <span className="w-11 text-center text-[13px] tabular-nums text-fg-2">{Math.round(zoom * 100)}%</span>
-          <IconButton size="icon-sm" label="Zoom in" disabled={zoom >= 2} onClick={() => setZoom((z) => z + 0.2)}><ZoomIn /></IconButton>
+          <IconButton size="icon-sm" label={t.player.zoomIn} disabled={zoom >= 2} onClick={() => setZoom((z) => z + 0.2)}><ZoomIn /></IconButton>
         </div>
       </div>
       <div ref={box} className="overflow-auto p-2 md:p-4">
         {data ? (
-          <Document file={data.url} onLoadSuccess={({ numPages }) => setPages(numPages)} loading={<Skeleton className="h-[60vh]" />} error={<p className="p-6 text-center text-sm text-fg-2">This document could not be displayed.</p>}>
+          <Document file={data.url} onLoadSuccess={({ numPages }) => setPages(numPages)} loading={<Skeleton className="h-[60vh]" />} error={<p className="p-6 text-center text-sm text-fg-2">{t.player.pdfError}</p>}>
             <Page pageNumber={page} width={Math.max(240, width - 8) * zoom} className="mx-auto w-fit shadow-md" loading={<Skeleton className="h-[60vh]" />} />
           </Document>
         ) : <Skeleton className="h-[60vh]" />}

@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { AppLoader } from "@/components/ui/app-loader";
 import { RouteProgress } from "@/components/ui/route-progress";
 import { Providers } from "@/lib/providers";
-import { getSite } from "@/lib/server";
+import { getLang, getSite } from "@/lib/server";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -40,10 +40,10 @@ const THEME_SCRIPT = `try{var t=localStorage.getItem("theme");if(t==="dark"||(t!
 
 export default async function RootLayout({ children }: { children: ReactNode }) {
   await connection(); // render per request, while fetches stay in the data cache for ISR-style freshness
-  const site = await getSite();
+  const [site, lang] = await Promise.all([getSite(), getLang()]);
   const color = /^#[0-9a-fA-F]{6}$/.test(site.primary_color) ? site.primary_color : "#4F46E5";
   return (
-    <html lang="en" className={`${inter.variable} ${serif.variable}`} suppressHydrationWarning>
+    <html lang={lang} className={`${inter.variable} ${serif.variable}`} suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
         <style dangerouslySetInnerHTML={{ __html: `:root{--primary:${color};--primary-fg:${readableOn(color)}}` }} />
@@ -51,7 +51,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body>
         <AppLoader name={site.site_name} logo={site.logo_url} />
         <RouteProgress />
-        <Providers site={site}>{children}</Providers>
+        <Providers site={site} lang={lang}>{children}</Providers>
       </body>
     </html>
   );

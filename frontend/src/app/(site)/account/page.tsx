@@ -1,5 +1,9 @@
 import type { Metadata } from "next";
+import { getT } from "@/lib/server";
 import { Account } from "@/components/site/auth";
 
-export const metadata: Metadata = { title: "Account", robots: { index: false } };
+export async function generateMetadata(): Promise<Metadata> {
+  const t = await getT();
+  return { title: t.nav.account, robots: { index: false } };
+}
 export default function AccountPage() { return <Account />; }

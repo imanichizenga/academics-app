@@ -25,6 +25,8 @@ Open <http://localhost:3000>. The API docs are at <http://localhost:3000/api/doc
 | Admin (teacher) | 0754 000 001 | `darasa-demo-2026` |
 | Editor | 0754 000 002 | `darasa-demo-2026` |
 | Student with a subscription | 0754 100 000 | `darasa-demo-2026` |
+| Subscriber (fixed, used by e2e) | 0754 200 001 | `darasa-demo-2026` |
+| Lapsed subscriber (used by e2e) | 0754 200 002 | `darasa-demo-2026` |
 
 These accounts are for development. Never seed a production database. The seed command refuses to run with `DJANGO_DEBUG=false` unless you pass `--force`.
 
@@ -205,8 +207,8 @@ Without CloudFront, the app uses S3 presigned URLs.
 ## Testing
 
 ```bash
-make test-backend     # 103 tests. Needs Postgres and Redis running.
-make test-e2e         # 32 tests. See below.
+make test-backend     # Needs Postgres and Redis running.
+make test-e2e         # See below.
 ```
 
 The e2e suite needs a freshly seeded stack, the mock gateway, and Google Chrome. Chrome is required because Playwright's bundled Chromium has no H.264 decoder, so it cannot play the video tests.
@@ -225,6 +227,19 @@ The suite points the gateway at the mock, so reseed afterwards. The mock decline
 ```bash
 node e2e-smoke.mjs "/,/explore" 360,390,768,1024,1440
 ```
+
+`frontend/e2e-shots.mjs` is the full visual sweep: every student and admin page, the three checkout stages and the maintenance page, at five widths in light and dark, in `screenshots/sweep`. It fails on console errors, hydration errors and horizontal overflow, and needs the mock gateway running.
+
+## Configuring SMS and email
+
+Everything is in **Admin → Settings → Notifications**. Secrets are encrypted at rest and never returned by the API. All sending happens in Celery, with up to 5 attempts, so a slow provider cannot hold up a page or a payment.
+
+- **Beem Africa:** API key, API secret and an approved sender ID.
+- **Africa's Talking:** username, API key and optionally a sender ID. Use the username `sandbox` for their sandbox.
+- **Generic HTTP:** a URL, method, JSON headers and a body template, with `{to}`, `{message}`, `{sender}`, `{api_key}` and `{api_secret}`. Values are escaped for JSON or URL encoding automatically. Any 2xx reply counts as sent.
+- **Email:** any SMTP server.
+
+Each channel has a test that sends a real message and shows a step checklist. Five editable messages exist in English and Kiswahili: receipt, account created, subscription ending, subscription ended and reset code. Turning SMS on also turns on password reset by SMS. While it is off, `/forgot` shows the teacher's contact details.
 
 ## Deployment
 
@@ -254,10 +269,13 @@ Where the brief was ambiguous, or the docs differed from it, this is what the co
 - **A logged-in buyer keeps the purchase on their own account**, even if a relative's phone paid. The brief's "find by phone" applies to guests.
 - **A claim token never opens a staff account.** Payment succeeds and the entitlement is granted, but a staff member must log in with a password. This narrows the brief's auto-login rule.
 - **The claim token's 30 minutes start at payment**, not at order creation. Otherwise anyone approving after 30 minutes would lose the auto-login.
+- **The starter password accepts the number as people type it.** While `must_change_password` is on and the stored password is still the phone number, `07…`, `7…`, `255…` and `+255…` all work, with or without spaces. Once the password changes, none of them do. This does not change the risk noted under Known limitations.
+- **Receipts are for the buyer and admins.** The brief says owner and staff, but editors are documented and enforced as never seeing money, so a receipt returns 404 to them.
 - **Forced password change.** A password login is held at the change-password screen until it is done. A session from a claim token can use its purchase straight away, and shows the banner, as the brief describes.
 - **Failed logins lock a phone for 15 minutes after 8 tries.** This is on top of the per-IP limit.
 - **Purchased content cannot be deleted.** Archive it, and buyers keep access.
 - **Files not attached to any content** are refused to non-staff.
+- **Maintenance mode is enforced by the API as well as the pages.** Non-staff get a 503 with `code: "maintenance"`, except for sign-in, public site settings, the Snippe webhook, health checks and the admin API. An order in flight can still report status, be claimed, be cancelled and resend its prompt. Sign-in pages and the hosted-checkout return page live in the `(open)` route group, which is never hidden.
 
 **Content and media**
 
@@ -266,23 +284,38 @@ Where the brief was ambiguous, or the docs differed from it, this is what the co
 - **Body images load through an access-checked URL**, not a public one, so images in paid lessons are protected too.
 - **Locked content is cut on the server.** Articles send only the preview blocks, PDFs use a separate file of the first pages, audio a separate clip, and HLS a shortened playlist, with later segments refused.
 - **HLS is delivered through a Django endpoint** that returns playlists and redirects each segment to a short signed URL. This uses signed URLs, not cookies, because cookies would need CloudFront on the same parent domain as the site.
-- **Attach file opens a small dialog**, a bottom sheet on phones, rather than a popover. A popover anchored to the bubble menu closes when its own inputs take focus.
+- **Attach file opens a small dialog**, a bottom sheet on phones, rather than a popover. A popover anchored to the bubble menu closes when its own inputs take focus. The title quotes the selected text.
+- **Text colour swaps the toolbar's contents for the swatches** instead of opening a floating popover, for the same reason: focus must stay in the editor so the selection survives.
+- **Below `md`, selected text gets a bottom bar, not a bubble,** because a floating bubble clashes with the phone's own selection menu. It rises above the on-screen keyboard. Strikethrough and inline code are left out to keep Link on screen; both are in the toolbar's More menu.
 - **The `fileLink` mark also stores `filename` and `size`**, for the editor tooltip. Students always see the current values from the asset.
 - **Autosave applies to published lessons too.** Edits to a live lesson reach students on save.
 
+**Notifications**
+
+- **Message text is kept only until delivery**, encrypted, because it can be a reset code. The log keeps the time, channel, masked recipient, template, status and provider response.
+- **Beem follows its published OpenAPI spec.** Africa's Talking follows its official Python SDK, because its documentation site refused automated access. The `/version1/messaging` call matches the SDK. The response handling (status codes 100, 101 and 102 mean accepted) is from memory of their docs, so confirm it with the test button.
+- **The language of a message** comes from the account, or from the language used at checkout for a new account.
+
+**Languages**
+
+- **English and Kiswahili cover the student interface, messages and API errors, not lesson content.** The admin panel is English. Strings live in `frontend/src/lib/i18n.ts`, where a string missing from either language fails the build.
+- **The order of preference is the account's saved choice, then the `lang` cookie, then the browser's language.** A student who picks a language before logging in keeps it.
+- **The Kiswahili was written without a native-speaker review.** Have someone read it before launch.
+
 **Other**
 
-- **Public pages render per request with a 30 to 60 second data cache.** Published changes can take up to a minute to appear to anonymous visitors.
+- **Public pages render per request with a 30 to 60 second data cache.** Published changes can take up to a minute to appear to anonymous visitors. Site settings refresh within about 10 seconds, so turning maintenance on shows on pages that quickly. The API enforces it immediately.
+- **Dates are shown in Tanzanian time** (`Africa/Dar_es_Salaam`) for every visitor, so the server and browser always agree.
 - **The service worker only provides the offline page.** It caches no lessons, so paid content cannot linger on a device.
 - **Resending a USSD prompt is limited** to 4 a minute and 5 per order.
 - **Reconciliation checks at most 30 orders a minute**, oldest-checked first, to stay under Snippe's limit of 60 requests a minute.
 
 ## Known limitations
 
+- **The starter password is guessable.** Anyone who knows a phone number can log in to an auto-created account until its owner changes the password, and change it themselves. With SMS enabled, a reset code is the safer route.
+- **Delivery reports are not read.** "Sent" means the provider accepted a message, not that it reached the phone.
 - **Upload resume works within a browser session.** Pause, resume and automatic retry work, but closing the tab abandons the upload.
 - **Office files have no preview image.** DOCX, PPTX and XLSX show a file card with a download button. Rendering them would need LibreOffice on the worker.
 - **Math (KaTeX) is not implemented.** It was optional.
 - **MediaConvert outputs no scrubbing sprite**, so thumbnail previews on the seek bar need the FFmpeg worker. The output preset field is stored but not used: jobs use the built-in ladder.
-- **SMS and email are interfaces, with no provider.** Receipts and reminders are logged until you register one in `apps/core/notifications.py`. The SMS password reset activates once an SMS provider exists.
-- **Receipts** are the payment history in the library. There is no printable receipt.
 - **Not verified on real devices.** Layouts were tested in emulated browsers. Safari's native HLS path has not been run, and neither has PWA installation on a real phone.
