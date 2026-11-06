@@ -1,0 +1,8 @@
+overrides:
+  motion-dom: 12.23.23
+  motion-utils: 12.23.6
+# sharp is Next's optional image optimiser. This app serves its own optimised WEBP, so its install script is declined.
+allowBuilds:
+  sharp: false
+ignoredBuiltDependencies:
+  - sharp

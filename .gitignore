@@ -1,0 +1,12 @@
+.env
+*.pyc
+__pycache__/
+.venv/
+node_modules/
+.next/
+backend/media_data/
+backend/staticfiles/
+frontend/test-results/
+frontend/playwright-report/
+screenshots/
+*.log

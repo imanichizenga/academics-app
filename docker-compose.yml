@@ -1,0 +1,61 @@
+name: darasa
+x-backend: &backend
+  image: darasa-backend
+  env_file: ./backend/.env
+  environment: &benv
+    POSTGRES_HOST: postgres
+    REDIS_URL: redis://redis:6379/0
+  volumes:
+    - media_data:/app/media_data
+  depends_on:
+    postgres: { condition: service_healthy }
+    redis: { condition: service_healthy }
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: darasa
+      POSTGRES_USER: darasa
+      POSTGRES_PASSWORD: darasa
+    ports: ["5432:5432"]
+    volumes: [pg_data:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U darasa"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  redis:
+    image: redis:7-alpine
+    ports: ["6379:6379"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  backend:
+    <<: *backend
+    build: ./backend
+    command: sh -c "python manage.py migrate --noinput && gunicorn config.wsgi:application -b 0.0.0.0:8000 -w 3 --timeout 120"
+    ports: ["8000:8000"]
+  worker:
+    <<: *backend
+    depends_on: [backend]
+    command: celery -A config worker -l info --concurrency 2
+  beat:
+    <<: *backend
+    depends_on: [backend]
+    command: celery -A config beat -l info -s /tmp/celerybeat-schedule
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        INTERNAL_API_URL: http://backend:8000
+    environment:
+      INTERNAL_API_URL: http://backend:8000
+    ports: ["3000:3000"]
+    depends_on: [backend]
+
+volumes:
+  pg_data:
+  media_data:

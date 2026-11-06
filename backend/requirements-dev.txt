@@ -1,0 +1,7 @@
+-r requirements.txt
+pytest==8.4.2
+pytest-django==4.11.1
+responses==0.25.8
+moto[s3,sts]==5.1.16
+freezegun==1.5.5
+ruff==0.14.3
