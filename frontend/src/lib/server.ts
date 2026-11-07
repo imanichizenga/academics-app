@@ -17,13 +17,17 @@ export async function serverGet<T>(path: string, revalidate = 30): Promise<T | n
     return null;
   }
 }
+const DEFAULT_COLOR = "#4F46E5";
+/** Only for when the API is unreachable. The brand lives in the database, so nothing brand-specific belongs here. */
 export const fallbackSite: Site = {
-  site_name: "Darasa", tagline: "", hero_title: "", hero_subtitle: "", logo_url: "", favicon_url: "", primary_color: "#4F46E5",
+  site_name: "", tagline: "", hero_title: "", hero_subtitle: "", logo_url: "", favicon_url: "", primary_color: DEFAULT_COLOR,
+  icons: { icon_192: "/api/v1/site/icons/icon-192.png", icon_512: "/api/v1/site/icons/icon-512.png", maskable_512: "/api/v1/site/icons/maskable-512.png", apple_touch: "/api/v1/site/icons/apple-touch.png" },
   contact_email: "", contact_phone: "", contact_whatsapp: "", maintenance_message: "", teacher: { photo_url: "", name: "", title: "", bio: "", credentials: "", years: null, subjects: [] }, social_links: {}, currency: "TZS", guest_comment_policy: "login_required", allow_signup: true,
   faq: [], seo_title: "", seo_description: "", maintenance_mode: false, checkout_available: false, payment_method: "ussd_push",
-  poll_seconds: 3, default_content_price: 5000, plans: [],
+  poll_seconds: 3, default_content_price: 5000, plans: [], announcements: [],
 };
 export const getSite = async () => (await serverGet<Site>("/site/", 10)) ?? fallbackSite;
+export const brandColor = (site: Site) => (/^#[0-9a-fA-F]{6}$/.test(site.primary_color) ? site.primary_color : DEFAULT_COLOR);
 
 /** Staff keep using the site during maintenance. Everyone else sees the maintenance page. */
 export async function isStaffRequest() {

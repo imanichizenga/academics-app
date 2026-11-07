@@ -16,11 +16,16 @@ router.register("orders", v.AdminOrderViewSet, basename="admin-order")
 router.register("plans", v.AdminPlanViewSet, basename="admin-plan")
 router.register("comments", v.AdminCommentViewSet, basename="admin-comment")
 router.register("audit", v.AuditViewSet, basename="admin-audit")
+router.register("payouts", v.AdminPayoutViewSet, basename="admin-payout")
+router.register("announcements", v.AdminAnnouncementViewSet, basename="admin-announcement")
 router.register("notification-logs", v.NotificationLogViewSet, basename="admin-notification-log")
 urlpatterns = [
     path("dashboard/", v.DashboardView.as_view()),
     path("search/", v.CommandSearchView.as_view()),
     path("images/", PublicImageUploadView.as_view()),
+    path("withdrawals/summary/", v.PayoutSummaryView.as_view()),
+    path("withdrawals/quote/", v.PayoutQuoteView.as_view()),
+    path("withdrawals/earnings/", v.EarningsView.as_view()),
     path("settings/site/", v.SiteSettingsView.as_view()),
     path("settings/payments/", v.GatewayConfigView.as_view()),
     path("settings/payments/test/", v.GatewayTestView.as_view()),

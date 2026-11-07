@@ -33,7 +33,7 @@ export function ReceiptView({ id }: { id: string }) {
     <div className="pb-tabbar mx-auto max-w-xl px-4 pt-5 md:pt-10">
       <section data-testid="receipt" className="print-sheet rounded-2xl border bg-surface p-5 shadow-sm md:p-8">
         <div className="flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2.5 font-semibold tracking-tight"><LogoMark logo={data.logo_url} className="size-9 shrink-0" /><span className="truncate">{data.site_name}</span></div>
+          <div className="flex min-w-0 items-center gap-2.5 font-semibold tracking-tight"><LogoMark logo={data.logo_url} name={data.site_name} className="size-9 shrink-0" /><span className="truncate">{data.site_name}</span></div>
           <h1 className="shrink-0 text-lg font-semibold tracking-tight text-fg-2">{t.receipt.title}</h1>
         </div>
         <div className="mt-6 border-y py-5 text-center">

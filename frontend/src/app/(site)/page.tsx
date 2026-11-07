@@ -1,4 +1,5 @@
 import { ArrowRight, Check } from "lucide-react";
+import { HomeAnnouncements } from "@/components/site/announcements";
 import { ContinueLearning, HomeRefresh } from "@/components/site/home";
 import { MeetTeacher } from "@/components/site/teacher";
 import { ContentCard } from "@/components/content/card";
@@ -40,6 +41,7 @@ export default async function HomePage() {
             <Button asChild size="lg" variant="secondary"><Link href="/pricing">{t.home.plans}</Link></Button>
           </div>
         </section>
+        <HomeAnnouncements />
         {featured.length > 0 && (
           <section aria-label={t.home.featured} className="mt-8 md:mt-12">
             <Carousel label={t.home.featured}>

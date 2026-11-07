@@ -65,6 +65,18 @@ class SnippeClient:
     def balance(self):
         return self._request("GET", "/v1/payments/balance", retries=0)
 
+    def payout_fee(self, amount):
+        return self._request("GET", f"/v1/payouts/fee?amount={int(amount)}", retries=1)
+
+    def send_payout(self, body, idempotency_key):
+        return self._request("POST", "/v1/payouts/send", body, {"Idempotency-Key": idempotency_key}, retries=0)
+
+    def get_payout(self, reference):
+        return self._request("GET", f"/v1/payouts/{reference}", retries=1)
+
+    def list_payouts(self, limit=50):
+        return self._request("GET", f"/v1/payouts?limit={int(limit)}", retries=1)
+
     def create_session(self, body):
         return self._request("POST", "/api/v1/sessions", body, token=self.session_token)
 

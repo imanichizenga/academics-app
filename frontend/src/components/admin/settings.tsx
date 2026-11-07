@@ -1,10 +1,11 @@
 "use client";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Circle, Copy, CreditCard, HardDrive, Loader2, MessageSquare, MinusCircle, Palette, Bell, Plus, Send, ShieldCheck, Trash2, TriangleAlert, Users, XCircle } from "lucide-react";
+import { CheckCircle2, Circle, Copy, CreditCard, HardDrive, Loader2, Megaphone, MessageSquare, MinusCircle, Palette, Bell, Plus, Send, ShieldCheck, Trash2, TriangleAlert, Users, XCircle } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { TeacherProfile } from "@/components/site/teacher";
+import { Announcements } from "./announcements";
 import { Badge, Card, PageHeader, Skeleton } from "@/components/ui/display";
 import { FileDropzone } from "@/components/ui/dropzone";
 import { DataTable, type Column } from "@/components/ui/data-table";
@@ -17,14 +18,14 @@ import { useTable } from "@/lib/use-table";
 import { cn, dateTime, formatPhone } from "@/lib/utils";
 
 export const SECTIONS = [
-  { key: "general", label: "General & branding", icon: Palette }, { key: "payments", label: "Payments", icon: CreditCard }, { key: "storage", label: "Storage", icon: HardDrive },
+  { key: "general", label: "General & branding", icon: Palette }, { key: "announcements", label: "Announcements", icon: Megaphone }, { key: "payments", label: "Payments", icon: CreditCard }, { key: "storage", label: "Storage", icon: HardDrive },
   { key: "engagement", label: "Comments & engagement", icon: MessageSquare }, { key: "notifications", label: "Notifications", icon: Bell }, { key: "admins", label: "Admins & roles", icon: ShieldCheck },
 ];
 type Step = { key: string; title: string; status?: "running" | "ok" | "warn" | "fail" | "skip"; detail?: string; fix?: string; cors_json?: object };
 const copy = async (text: string) => { await navigator.clipboard?.writeText(text); toast.success("Copied"); };
 const Last = ({ name, at }: { name?: string; at?: string }) => (at ? <p className="text-[13px] text-fg-3">Last changed {dateTime(at)}{name ? ` by ${name}` : ""}</p> : null);
 
-function StepIcon({ status }: { status?: Step["status"] }) {
+export function StepIcon({ status }: { status?: Step["status"] }) {
   if (status === "running") return <Loader2 className="size-5 animate-spin text-primary-ink" />;
   if (status === "ok") return <CheckCircle2 className="size-5 text-success" />;
   if (status === "warn") return <TriangleAlert className="size-5 text-warning" />;
@@ -100,7 +101,7 @@ function General() {
   if (!query.data) return <Skeleton className="h-96" />;
   return (
     <div className="space-y-4">
-      <Section title="Brand">
+      <Section title="Brand" description="The logo also becomes the app icon on phones. Without one, the first letter of the site name is used.">
         <div className="grid gap-4 lg:grid-cols-2">
           <Field label="Site name"><Input value={f.site_name ?? ""} onChange={(e) => set({ site_name: e.target.value })} /></Field>
           <Field label="Tagline"><Input value={f.tagline ?? ""} onChange={(e) => set({ tagline: e.target.value })} /></Field>
@@ -108,8 +109,8 @@ function General() {
           <Field label="Currency"><Input value={f.currency ?? "TZS"} disabled /></Field>
         </div>
         <div className="grid gap-4 lg:grid-cols-2">
-          <div><div className="mb-1.5 text-[13px] font-medium">Logo</div>{f.logo_url && <img src={f.logo_url} alt="Logo" className="mb-2 size-14 rounded-lg border object-cover" />}<FileDropzone accept="image/*" label={busy ? "Uploading…" : "Upload a logo"} onFiles={(x) => up(x, "logo")} /></div>
-          <div><div className="mb-1.5 text-[13px] font-medium">Favicon</div>{f.favicon_url && <img src={f.favicon_url} alt="Favicon" className="mb-2 size-8 rounded border" />}<FileDropzone accept="image/*" label="Upload a favicon" onFiles={(x) => up(x, "favicon")} /></div>
+          <div><div className="mb-1.5 text-[13px] font-medium">Logo</div>{f.logo_url && <div className="mb-2 flex items-center gap-2"><img src={f.logo_url} alt="Logo" className="size-14 rounded-lg border object-cover" /><button type="button" className="text-[13px] text-fg-2 underline" onClick={() => set({ logo: "", logo_url: "" })}>Remove logo</button></div>}<FileDropzone accept="image/*" label={busy ? "Uploading…" : "Upload a logo"} onFiles={(x) => up(x, "logo")} /></div>
+          <div><div className="mb-1.5 text-[13px] font-medium">Favicon</div>{f.favicon_url && <div className="mb-2 flex items-center gap-2"><img src={f.favicon_url} alt="Favicon" className="size-8 rounded border" /><button type="button" className="text-[13px] text-fg-2 underline" onClick={() => set({ favicon: "", favicon_url: "" })}>Remove favicon</button></div>}<FileDropzone accept="image/*" label="Upload a favicon" onFiles={(x) => up(x, "favicon")} /></div>
         </div>
       </Section>
       <Section title="Home page">
@@ -419,7 +420,7 @@ function Admins() {
   );
 }
 export function Settings({ section }: { section: string }) {
-  const View = { general: General, payments: Payments, storage: Storage, engagement: Engagement, notifications: Notifications, admins: Admins }[section]!;
+  const View = { general: General, announcements: Announcements, payments: Payments, storage: Storage, engagement: Engagement, notifications: Notifications, admins: Admins }[section]!;
   return (
     <>
       <PageHeader title="Settings" />

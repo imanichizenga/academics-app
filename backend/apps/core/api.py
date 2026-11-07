@@ -115,6 +115,7 @@ CheckoutThrottle = scoped("checkout")
 ResendThrottle = scoped("resend_push")
 CommentThrottle = scoped("comments")
 WebhookThrottle = scoped("webhook")
+PayoutThrottle = scoped("payout")
 OtpThrottle = scoped("otp")
 ClaimThrottle = scoped("claim")
 

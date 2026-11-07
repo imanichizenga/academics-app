@@ -9,7 +9,7 @@ from django.db.models.functions import TruncDate
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import decorators, serializers, viewsets
+from rest_framework import decorators, generics, serializers, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -18,12 +18,13 @@ from apps.accounts.models import User
 from apps.accounts.views import revoke_all_sessions
 from apps.catalog.models import Content
 from apps.catalog.serializers import public_url
-from apps.core.api import ApiError, IsAdminRole, IsEditorOrAdmin
+from apps.core.api import ApiError, IsAdminRole, IsEditorOrAdmin, PayoutThrottle
 from apps.core.audit import diff, record, snapshot
+from apps.core.branding import HEX_COLOR
 from apps.core import diagnostics as notify_diag
 from apps.core import notifications
 from apps.core.fields import mask_secret
-from apps.core.models import AuditLog, NotificationConfig, NotificationLog, NotificationTemplate, SiteSettings
+from apps.core.models import Announcement, AuditLog, NotificationConfig, NotificationLog, NotificationTemplate, SiteSettings
 from apps.core.phone import InvalidPhone, normalize_phone
 from apps.engagement.models import Comment
 from apps.engagement.views import CommentSerializer
@@ -31,9 +32,9 @@ from apps.media_library import diagnostics as storage_diag
 from apps.media_library.models import MediaAsset, StorageConfig
 from apps.media_library.serializers import StorageConfigSerializer
 from apps.payments import diagnostics as gateway_diag
-from apps.payments import services
+from apps.payments import payouts, services
 from apps.payments.access import build_context, current_entitlements
-from apps.payments.models import Entitlement, Order, PaymentGatewayConfig, SubscriptionPlan, WebhookEvent
+from apps.payments.models import Entitlement, Order, PaymentGatewayConfig, Payout, SubscriptionPlan, WebhookEvent
 from apps.payments.serializers import (AdminOrderSerializer, EntitlementSerializer, GatewayConfigSerializer,
                                        PlanSerializer)
 from apps.payments.snippe import SnippeError
@@ -493,6 +494,18 @@ class SiteSettingsSerializer(serializers.ModelSerializer):
     def get_teacher_photo_url(self, obj):
         return public_url(obj.teacher_photo)
 
+    def validate_primary_color(self, value):
+        if not HEX_COLOR.fullmatch(value):
+            raise serializers.ValidationError("Enter a colour like #4F46E5.")
+        return value
+
+    def _public_image(self, value):
+        if value and (not value.startswith("public/") or ".." in value):
+            raise serializers.ValidationError("Upload the image here first.")
+        return value
+
+    validate_logo = validate_favicon = _public_image
+
     def validate_teacher_subjects(self, value):
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
             raise serializers.ValidationError("Enter a list of subjects.")
@@ -806,3 +819,146 @@ class CommandSearchView(APIView):
 
 
 __all__ = ["current_entitlements"]
+
+
+# ---------- withdrawals ----------
+class PayoutSerializer(serializers.ModelSerializer):
+    requested_by_name = serializers.CharField(source="requested_by.get_full_name", default="", read_only=True)
+    status_label = serializers.CharField(source="get_status_display", read_only=True)
+
+    class Meta:
+        model = Payout
+        fields = ["id", "amount", "fee", "total", "currency", "channel", "recipient_name", "recipient_phone",
+                  "recipient_bank", "recipient_account", "narration", "status", "status_label", "snippe_reference",
+                  "external_reference", "failure_reason", "timeline", "requested_by_name", "created_at",
+                  "completed_at"]
+
+
+class PayoutSummaryView(APIView):
+    """Everything the Withdraw page needs: Snippe readiness and balance, and what was earned vs withdrawn."""
+
+    permission_classes = [IsAdminRole]
+    serializer_class = Empty
+
+    def get(self, request):
+        return Response({**payouts.summary(), **payouts.readiness()})
+
+
+class PayoutQuoteView(APIView):
+    permission_classes = [IsAdminRole]
+    serializer_class = Empty
+
+    def get(self, request):
+        try:
+            amount = int(request.query_params.get("amount", ""))
+        except ValueError as exc:
+            raise ApiError("Enter the amount to withdraw.", "invalid") from exc
+        return Response(payouts.quote(amount))
+
+
+class AdminPayoutViewSet(viewsets.ReadOnlyModelViewSet):
+    permission_classes = [IsAdminRole]
+    serializer_class = PayoutSerializer
+    queryset = Payout.objects.select_related("requested_by")
+    filterset_fields = ["status"]
+
+    def get_throttles(self):
+        return [PayoutThrottle()] if self.action == "create" else super().get_throttles()
+
+    def create(self, request):
+        if not request.user.check_password(str(request.data.get("password") or "")):
+            raise ApiError("That password is not right.", "wrong_password", 403,
+                           extra={"fields": {"password": "That password is not right."}})
+        payout = payouts.create(request.user, request.data)
+        record(request, "payout.create", payout, {"amount": payout.amount, "fee": payout.fee,
+                                                  "to": payout.recipient_phone or payout.recipient_account,
+                                                  "status": payout.status}, label=f"Withdrawal TZS {payout.amount:,}")
+        if payout.status == Payout.Status.FAILED:
+            raise ApiError(f"Snippe did not accept the withdrawal: {payout.failure_reason}", "payout_rejected", 502,
+                           extra={"payout": PayoutSerializer(payout).data})
+        return Response(PayoutSerializer(payout).data, status=201)
+
+    @decorators.action(detail=True, methods=["post"])
+    def recheck(self, request, pk=None):
+        payout = self.get_object()
+        try:
+            state = payouts.reconcile(payout)
+        except SnippeError as exc:
+            raise ApiError(f"Snippe could not answer: {exc}", "gateway_error", 502) from exc
+        return Response({"gateway_status": state, **PayoutSerializer(self.get_queryset().get(pk=pk)).data})
+
+
+class EarningRowSerializer(serializers.ModelSerializer):
+    type_label = serializers.CharField(source="get_order_type_display", read_only=True)
+
+    class Meta:
+        model = Order
+        fields = ["id", "first_name", "last_name", "phone", "item_title", "order_type", "type_label", "amount",
+                  "currency", "payment_provider", "paid_at", "user"]
+
+
+class EarningsView(generics.ListAPIView):
+    """Everyone who paid: subscribers and content buyers. `since_last=1` limits it to after the last withdrawal."""
+
+    permission_classes = [IsAdminRole]
+    serializer_class = EarningRowSerializer
+    ordering_fields = ["paid_at", "amount"]
+    ordering = ["-paid_at"]
+
+    def get_queryset(self):
+        qs = payouts.earnings()
+        params = self.request.query_params
+        if params.get("order_type") in (Order.Type.SUBSCRIPTION, Order.Type.CONTENT):
+            qs = qs.filter(order_type=params["order_type"])
+        if params.get("since_last") == "1" and (last := payouts.last_withdrawal()):
+            qs = qs.filter(paid_at__gt=last.created_at)
+        if term := params.get("search", "").strip():
+            qs = qs.filter(Q(phone__icontains=term) | Q(first_name__icontains=term) | Q(last_name__icontains=term)
+                           | Q(item_title__icontains=term))
+        return qs
+
+
+# ---------- announcements ----------
+class AnnouncementSerializer(serializers.ModelSerializer):
+    state = serializers.CharField(read_only=True)
+    created_by_name = serializers.CharField(source="created_by.get_full_name", default="", read_only=True)
+
+    class Meta:
+        model = Announcement
+        exclude = ["created_by"]
+        read_only_fields = ["created_at", "updated_at"]
+
+    def validate_link_url(self, value):
+        value = value.strip()
+        if value and not (value.startswith("/") and not value.startswith("//") or value.startswith("https://")
+                          or value.startswith("http://")):
+            raise serializers.ValidationError("Use a page on this site, like /pricing, or a full https:// link.")
+        return value
+
+    def validate(self, attrs):
+        starts = attrs.get("starts_at", getattr(self.instance, "starts_at", None))
+        ends = attrs.get("ends_at", getattr(self.instance, "ends_at", None))
+        if starts and ends and ends <= starts:
+            raise serializers.ValidationError({"ends_at": "The end must be after the start."})
+        return attrs
+
+
+class AdminAnnouncementViewSet(viewsets.ModelViewSet):
+    permission_classes = [IsAdminRole]
+    serializer_class = AnnouncementSerializer
+    queryset = Announcement.objects.select_related("created_by")
+    pagination_class = None
+    FIELDS = ["title", "body", "tone", "placement", "audience", "is_active", "starts_at", "ends_at", "link_url"]
+
+    def perform_create(self, serializer):
+        obj = serializer.save(created_by=self.request.user)
+        record(self.request, "announcement.create", obj, snapshot(obj, self.FIELDS), label=obj.title)
+
+    def perform_update(self, serializer):
+        before = snapshot(serializer.instance, self.FIELDS)
+        obj = serializer.save()
+        record(self.request, "announcement.update", obj, diff(before, snapshot(obj, self.FIELDS)), label=obj.title)
+
+    def perform_destroy(self, instance):
+        record(self.request, "announcement.delete", instance, label=instance.title)
+        instance.delete()

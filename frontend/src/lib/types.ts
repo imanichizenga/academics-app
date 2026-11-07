@@ -1,12 +1,16 @@
 export type Plan = { id: string; name: string; description: string; price: number; promo_price: number | null; effective_price: number; duration_days: number; features: string[]; is_active: boolean; highlighted: boolean; order: number };
 export type Teacher = { photo_url: string; name: string; title: string; bio: string; credentials: string; years: number | null; subjects: string[] };
 export type Site = {
-  site_name: string; tagline: string; hero_title: string; hero_subtitle: string; logo_url: string; favicon_url: string; primary_color: string;
+  site_name: string; tagline: string; hero_title: string; hero_subtitle: string; logo_url: string; favicon_url: string; icons: { icon_192: string; icon_512: string; maskable_512: string; apple_touch: string }; primary_color: string;
   contact_email: string; contact_phone: string; contact_whatsapp: string; maintenance_message: string; teacher: Teacher; social_links: Record<string, string>; currency: string; guest_comment_policy: string;
   allow_signup: boolean; faq: { q: string; a: string }[]; seo_title: string; seo_description: string; maintenance_mode: boolean;
-  checkout_available: boolean; payment_method: string; poll_seconds: number; default_content_price: number; plans: Plan[];
+  checkout_available: boolean; payment_method: string; poll_seconds: number; default_content_price: number; plans: Plan[]; announcements: Announcement[];
 };
 export type User = { id: string; username: string; phone: string; first_name: string; last_name: string; email: string; role: "admin" | "editor" | "student"; must_change_password: boolean; source: string; date_joined: string; language: "" | "en" | "sw" };
+export type Announcement = {
+  id: string; version: string; title: string; body: string; title_sw: string; body_sw: string; link_url: string; link_label: string; link_label_sw: string;
+  tone: "info" | "success" | "warning" | "promo"; placement: "bar" | "home"; audience: "everyone" | "guests" | "members"; dismissible: boolean; ends_at: string | null;
+};
 export type CategoryBrief = { id: string; name: string; slug: string; color: string; icon: string; parent: string | null };
 export type CategoryNode = { id: string; name: string; slug: string; description: string; icon: string; color: string; cover_url: string; order: number; is_active: boolean; content_count: number; children: CategoryNode[] };
 export type Tag = { id: string; name: string; slug: string };

@@ -9,7 +9,7 @@ class MaintenanceMiddleware:
     """While maintenance is on, students get a 503. Staff, sign-in and payments in flight keep working."""
 
     OPEN = ("/api/health/", "/api/schema/", "/api/docs/", "/api/payments/webhooks/", "/api/v1/auth/", "/api/v1/site/",
-            "/api/v1/admin/")
+            "/api/v1/admin/", "/api/v1/media/public/")  # public/ holds the logo the maintenance page itself shows
     IN_FLIGHT = re.compile(r"^/api/v1/orders/[0-9a-f-]{36}/(status|claim|cancel|resend)/$")
 
     def __init__(self, get_response):

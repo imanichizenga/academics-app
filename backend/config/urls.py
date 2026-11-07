@@ -3,7 +3,7 @@ from django.http import JsonResponse
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from apps.catalog.views import SiteView
+from apps.catalog.views import BrandIconView, SiteView
 from apps.payments.views import SnippeWebhookView
 
 
@@ -19,6 +19,7 @@ urlpatterns = [
     path("api/payments/webhooks/snippe/", SnippeWebhookView.as_view()),
     path("api/v1/auth/", include("apps.accounts.urls")),
     path("api/v1/site/", SiteView.as_view()),
+    path("api/v1/site/icons/<slug:name>.png", BrandIconView.as_view()),
     path("api/v1/catalog/", include("apps.catalog.urls")),
     path("api/v1/media/", include("apps.media_library.urls")),
     path("api/v1/", include("apps.payments.urls")),

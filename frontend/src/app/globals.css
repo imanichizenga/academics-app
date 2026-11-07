@@ -155,6 +155,7 @@ a:active:not([aria-disabled="true"]), button:active:not(:disabled), [role="butto
 @keyframes pop { 0% { transform: scale(.8); opacity: 0; } 60% { transform: scale(1.06); } 100% { transform: scale(1); opacity: 1; } }
 @keyframes ring { 0% { transform: scale(.7); opacity: .6; } 100% { transform: scale(1.5); opacity: 0; } }
 @keyframes buzz { 0%, 90%, 100% { transform: rotate(0); } 92% { transform: rotate(-4deg); } 94% { transform: rotate(4deg); } 96% { transform: rotate(-4deg); } 98% { transform: rotate(4deg); } }
+@keyframes announce-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
 @keyframes mark-draw { 0% { stroke-dashoffset: 120; } 60%, 100% { stroke-dashoffset: 0; } }
 .animate-pop { animation: pop var(--dur-slow) var(--ease) both; }
 .animate-ring { animation: ring 1.8s var(--ease) infinite; }

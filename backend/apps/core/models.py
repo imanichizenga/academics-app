@@ -93,6 +93,71 @@ class SiteSettings(Singleton):
     teacher_subjects = models.JSONField(default=list, blank=True)
 
 
+class Announcement(UUIDModel):
+    """A message the admin publishes to visitors, as a bar on every page or a card on the home page."""
+
+    class Tone(models.TextChoices):
+        INFO = "info", "Information"
+        SUCCESS = "success", "Good news"
+        WARNING = "warning", "Important"
+        PROMO = "promo", "Offer"
+
+    class Placement(models.TextChoices):
+        BAR = "bar", "Bar on every page"
+        HOME = "home", "Card on the home page"
+
+    class Audience(models.TextChoices):
+        EVERYONE = "everyone", "Everyone"
+        GUESTS = "guests", "Visitors who are not logged in"
+        MEMBERS = "members", "Logged-in learners"
+
+    title = models.CharField(max_length=120)
+    body = models.CharField(max_length=400, blank=True)
+    title_sw = models.CharField(max_length=120, blank=True)  # optional Swahili version
+    body_sw = models.CharField(max_length=400, blank=True)
+    link_url = models.CharField(max_length=500, blank=True)
+    link_label = models.CharField(max_length=40, blank=True)
+    link_label_sw = models.CharField(max_length=40, blank=True)
+    tone = models.CharField(max_length=10, choices=Tone.choices, default=Tone.INFO)
+    placement = models.CharField(max_length=10, choices=Placement.choices, default=Placement.BAR)
+    audience = models.CharField(max_length=10, choices=Audience.choices, default=Audience.EVERYONE)
+    is_active = models.BooleanField(default=False)  # visible only when switched on
+    dismissible = models.BooleanField(default=True)
+    starts_at = models.DateTimeField(null=True, blank=True)
+    ends_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.title
+
+    @classmethod
+    def live(cls, now=None):
+        from django.db.models import Q
+        from django.utils import timezone
+
+        now = now or timezone.now()
+        return cls.objects.filter(Q(starts_at__isnull=True) | Q(starts_at__lte=now),
+                                  Q(ends_at__isnull=True) | Q(ends_at__gt=now), is_active=True)
+
+    @property
+    def state(self):
+        from django.utils import timezone
+
+        now = timezone.now()
+        if not self.is_active:
+            return "off"
+        if self.ends_at and self.ends_at <= now:
+            return "ended"
+        if self.starts_at and self.starts_at > now:
+            return "scheduled"
+        return "live"
+
+
 class NotificationConfig(TimeStamped):
     """SMS and email delivery. Loaded fresh each time, so decrypted secrets never sit in the cache."""
 

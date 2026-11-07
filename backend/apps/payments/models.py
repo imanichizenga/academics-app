@@ -171,6 +171,52 @@ class Entitlement(UUIDModel):
         return self.is_active and self.starts_at <= now and (self.expires_at is None or self.expires_at > now)
 
 
+class Payout(UUIDModel):
+    """Money the teacher withdraws from the Snippe balance. Amount is what arrives; total is what leaves the balance."""
+
+    class Status(models.TextChoices):
+        PENDING = "pending", "On the way"
+        COMPLETED = "completed", "Completed"
+        FAILED = "failed", "Failed"
+        REVERSED = "reversed", "Reversed"
+
+    class Channel(models.TextChoices):
+        MOBILE = "mobile", "Mobile money"
+        BANK = "bank", "Bank account"
+
+    amount = models.PositiveIntegerField()
+    fee = models.PositiveIntegerField(default=0)
+    total = models.PositiveIntegerField(default=0)
+    currency = models.CharField(max_length=3, default="TZS")
+    channel = models.CharField(max_length=10, choices=Channel.choices)
+    recipient_name = models.CharField(max_length=120)
+    recipient_phone = models.CharField(max_length=12, blank=True)
+    recipient_bank = models.CharField(max_length=40, blank=True)
+    recipient_account = models.CharField(max_length=40, blank=True)
+    narration = models.CharField(max_length=120, blank=True)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING, db_index=True)
+    snippe_reference = models.CharField(max_length=80, blank=True, db_index=True)
+    external_reference = models.CharField(max_length=80, blank=True)
+    failure_reason = models.CharField(max_length=240, blank=True)
+    idempotency_key = models.CharField(max_length=30, unique=True)
+    raw_response = models.JSONField(default=dict, blank=True)
+    timeline = models.JSONField(default=list, blank=True)
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
+    )
+    completed_at = models.DateTimeField(null=True, blank=True)
+    last_polled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Payout {self.amount} ({self.status})"
+
+    def log(self, event, detail=""):
+        self.timeline = [*self.timeline, {"at": timezone.now().isoformat(), "event": event, "detail": detail}]
+
+
 class WebhookEvent(models.Model):
     event_id = models.CharField(max_length=120, unique=True)
     type = models.CharField(max_length=60, db_index=True)

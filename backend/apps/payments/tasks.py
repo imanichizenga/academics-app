@@ -9,8 +9,8 @@ from django.utils import timezone
 from apps.core import notifications
 from apps.core.models import NotificationConfig
 
-from . import services
-from .models import Entitlement, Order, PaymentGatewayConfig, WebhookEvent
+from . import payouts, services
+from .models import Entitlement, Order, PaymentGatewayConfig, Payout, WebhookEvent
 from .snippe import SnippeError
 
 log = logging.getLogger(__name__)
@@ -92,3 +92,20 @@ def send_expiry_reminders():
         notifications.notify("subscription_ending", phone=user.phone, email=user.email, language=user.language,
                              days=days, renew_url=f"{settings.FRONTEND_URL}/pricing")
         Entitlement.objects.filter(pk=entitlement.pk).update(reminded_at=now)
+
+
+@shared_task
+def reconcile_pending_payouts():
+    """Covers a missed payout webhook. Pending payouts older than a minute are asked about, oldest check first."""
+    if not PaymentGatewayConfig.load().api_key:
+        return
+    batch = Payout.objects.filter(status=Payout.Status.PENDING,
+                                  created_at__lt=timezone.now() - timedelta(minutes=1)).order_by(
+        F("last_polled_at").asc(nulls_first=True))[:RECONCILE_BATCH]
+    for payout in batch:
+        try:
+            payouts.reconcile(payout)
+        except SnippeError as exc:
+            if exc.status == 429:
+                break
+            log.warning("Payout reconcile failed for %s: %s", payout.pk, exc)

@@ -2,7 +2,7 @@
 
 A learning platform where one teacher publishes free and paid lessons to students. Payments use mobile money through [Snippe](https://docs.snippe.sh/docs/2026-01-25). Files live on local disk or Amazon S3.
 
-"Darasa" is the demo name. The admin can change the name, logo and colour in **Settings → General**.
+"Darasa" is the demo name. The name, logo, favicon and colour all live in the database and are edited in **Settings → General**. Installed-app icons and the manifest are generated from them, so a rebrand needs no rebuild.
 
 ## Quick start
 

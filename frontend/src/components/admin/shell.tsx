@@ -1,7 +1,7 @@
 "use client";
 import { useQuery } from "@tanstack/react-query";
 import { Command } from "cmdk";
-import { BarChart3, BookOpen, ChevronRight, ChevronsLeft, ChevronsRight, CreditCard, FileClock, FolderTree, Home, Image as ImageIcon, LogOut, Menu, MessageSquare, Moon, Package, Plus, Search, Settings, Users, type LucideIcon } from "lucide-react";
+import { BarChart3, BookOpen, ChevronRight, ChevronsLeft, ChevronsRight, CreditCard, FileClock, FolderTree, Home, Image as ImageIcon, LogOut, Menu, MessageSquare, Moon, Package, Plus, Search, Settings, Users, Wallet, type LucideIcon } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import * as DialogP from "@radix-ui/react-dialog";
@@ -21,10 +21,10 @@ type Item = { href: string; label: string; icon: LucideIcon; adminOnly?: boolean
 const NAV: { title?: string; items: Item[] }[] = [
   { items: [{ href: "/admin", label: "Dashboard", icon: BarChart3 }] },
   { title: "Teach", items: [{ href: "/admin/contents", label: "Content", icon: BookOpen }, { href: "/admin/categories", label: "Categories", icon: FolderTree }, { href: "/admin/media", label: "Media library", icon: ImageIcon }, { href: "/admin/comments", label: "Comments", icon: MessageSquare }] },
-  { title: "Business", items: [{ href: "/admin/orders", label: "Orders", icon: CreditCard, adminOnly: true }, { href: "/admin/plans", label: "Plans & pricing", icon: Package, adminOnly: true }, { href: "/admin/users", label: "Users", icon: Users, adminOnly: true }] },
+  { title: "Business", items: [{ href: "/admin/orders", label: "Orders", icon: CreditCard, adminOnly: true }, { href: "/admin/withdrawals", label: "Withdrawals", icon: Wallet, adminOnly: true }, { href: "/admin/plans", label: "Plans & pricing", icon: Package, adminOnly: true }, { href: "/admin/users", label: "Users", icon: Users, adminOnly: true }] },
   { title: "System", items: [{ href: "/admin/settings/general", label: "Settings", icon: Settings, adminOnly: true }, { href: "/admin/audit", label: "Audit log", icon: FileClock, adminOnly: true }] },
 ];
-const LABELS: Record<string, string> = { contents: "Content", categories: "Categories", media: "Media library", comments: "Comments", orders: "Orders", plans: "Plans & pricing", users: "Users", settings: "Settings", audit: "Audit log", general: "General", payments: "Payments", storage: "Storage", engagement: "Comments & engagement", notifications: "Notifications", admins: "Admins & roles", new: "New" };
+const LABELS: Record<string, string> = { contents: "Content", categories: "Categories", media: "Media library", comments: "Comments", orders: "Orders", withdrawals: "Withdrawals", announcements: "Announcements", plans: "Plans & pricing", users: "Users", settings: "Settings", audit: "Audit log", general: "General", payments: "Payments", storage: "Storage", engagement: "Comments & engagement", notifications: "Notifications", admins: "Admins & roles", new: "New" };
 const active = (path: string, href: string) => (href === "/admin" ? path === href : path.startsWith(href.replace("/general", "")));
 
 function SideNav({ collapsed, onNavigate, role }: { collapsed?: boolean; onNavigate?: () => void; role?: string }) {
@@ -126,7 +126,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-dvh">
       <aside className={cn("sticky top-0 hidden h-dvh shrink-0 flex-col border-r bg-surface transition-[width] duration-200 md:flex", collapsed ? "w-[60px]" : "w-60")}>
-        <div className={cn("flex h-14 items-center gap-2 border-b px-3 font-semibold tracking-tight", collapsed && "justify-center px-0")}><LogoMark logo={site.logo_url} className="size-7 shrink-0" />{!collapsed && <span className="truncate">{site.site_name}</span>}</div>
+        <div className={cn("flex h-14 items-center gap-2 border-b px-3 font-semibold tracking-tight", collapsed && "justify-center px-0")}><LogoMark logo={site.logo_url} name={site.site_name} className="size-7 shrink-0" />{!collapsed && <span className="truncate">{site.site_name}</span>}</div>
         <SideNav collapsed={collapsed} role={user.role} />
         <div className="border-t p-2">
           <IconButton label={collapsed ? "Expand sidebar" : "Collapse sidebar"} size="icon-sm" className="w-full" onClick={flip}>{collapsed ? <ChevronsRight /> : <ChevronsLeft />}</IconButton>
@@ -136,7 +136,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
         <DialogP.Portal>
           <DialogP.Overlay className="fixed inset-0 z-50 bg-black/45 md:hidden" />
           <DialogP.Content aria-describedby={undefined} className="safe-top fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col bg-surface shadow-lg outline-none md:hidden">
-            <DialogP.Title className="flex h-14 items-center gap-2 border-b px-3 font-semibold tracking-tight"><LogoMark logo={site.logo_url} className="size-7" />{site.site_name}</DialogP.Title>
+            <DialogP.Title className="flex h-14 items-center gap-2 border-b px-3 font-semibold tracking-tight"><LogoMark logo={site.logo_url} name={site.site_name} className="size-7" />{site.site_name}</DialogP.Title>
             <SideNav role={user.role} onNavigate={() => setDrawer(false)} />
           </DialogP.Content>
         </DialogP.Portal>

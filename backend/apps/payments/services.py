@@ -298,6 +298,14 @@ def process_event(event):
         order.log("webhook_received", event.type)
         Order.objects.filter(pk=order.pk).update(timeline=order.timeline)
         apply_payment_state(order, event.type.split(".", 1)[1], source="webhook", data=data)
+    elif event.type.startswith("payout."):
+        from . import payouts
+
+        data = event.payload.get("data") or {}
+        payout = payouts.find(data)
+        if payout is None:
+            raise LookupError(f"No payout for {data.get('reference')}")
+        payouts.apply_state(payout, event.type.split(".", 1)[1], data, source="webhook")
     WebhookEvent.objects.filter(pk=event.pk).update(processed_at=timezone.now(), processing_error="")
 
 

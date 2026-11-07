@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { AppLoader } from "@/components/ui/app-loader";
 import { RouteProgress } from "@/components/ui/route-progress";
 import { Providers } from "@/lib/providers";
-import { getLang, getSite } from "@/lib/server";
+import { brandColor, getLang, getSite } from "@/lib/server";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter", display: "swap" });
@@ -16,10 +16,10 @@ export async function generateMetadata(): Promise<Metadata> {
   const site = await getSite();
   return {
     metadataBase: new URL(origin),
-    title: { default: site.seo_title || site.site_name, template: `%s · ${site.site_name}` },
+    title: { default: site.seo_title || site.site_name, template: site.site_name ? `%s · ${site.site_name}` : "%s" },
     description: site.seo_description || site.tagline,
     manifest: "/manifest.webmanifest",
-    icons: { icon: site.favicon_url || "/icons/icon-192.png", apple: "/icons/apple-touch-icon.png" },
+    icons: { icon: site.favicon_url || site.icons.icon_192, apple: site.icons.apple_touch },
     appleWebApp: { capable: true, title: site.site_name, statusBarStyle: "default" },
     openGraph: { siteName: site.site_name, type: "website" },
   };
@@ -41,7 +41,7 @@ const THEME_SCRIPT = `try{var t=localStorage.getItem("theme");if(t==="dark"||(t!
 export default async function RootLayout({ children }: { children: ReactNode }) {
   await connection(); // render per request, while fetches stay in the data cache for ISR-style freshness
   const [site, lang] = await Promise.all([getSite(), getLang()]);
-  const color = /^#[0-9a-fA-F]{6}$/.test(site.primary_color) ? site.primary_color : "#4F46E5";
+  const color = brandColor(site);
   return (
     <html lang={lang} className={`${inter.variable} ${serif.variable}`} suppressHydrationWarning>
       <head>

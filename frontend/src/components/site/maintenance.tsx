@@ -25,7 +25,7 @@ export function MaintenancePage() {
   return (
     <main data-testid="maintenance" className="safe-top safe-bottom grid min-h-dvh place-items-center bg-bg px-4 py-10 text-center">
       <div className="w-full max-w-md">
-        <LogoMark logo={site.logo_url} className="mx-auto mb-5 size-14" />
+        <LogoMark logo={site.logo_url} name={site.site_name} className="mx-auto mb-5 size-14" />
         <div className="mb-1 text-sm font-semibold tracking-tight text-fg-2">{site.site_name}</div>
         <h1 className="font-serif text-[32px] font-semibold leading-tight tracking-tight md:text-[40px]">{t.maintenance.title}</h1>
         <p className="mx-auto mt-3 max-w-sm whitespace-pre-line text-[17px] leading-relaxed text-fg-2">{site.maintenance_message || t.maintenance.text(site.site_name)}</p>

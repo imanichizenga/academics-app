@@ -68,7 +68,7 @@ function Brand({ compact }: { compact?: boolean }) {
   const site = useSite();
   return (
     <Link href="/" spinner="none" className="flex min-w-0 shrink-0 items-center gap-2 font-semibold tracking-tight">
-      <LogoMark logo={site.logo_url} className="size-8 shrink-0" />
+      <LogoMark logo={site.logo_url} name={site.site_name} className="size-8 shrink-0" />
       <span className={cn("truncate", compact ? "text-[17px]" : "text-base")}>{site.site_name}</span>
     </Link>
   );

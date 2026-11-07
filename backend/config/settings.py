@@ -123,6 +123,7 @@ REST_FRAMEWORK = {
         "webhook": "300/min",
         "otp": "5/hour",
         "claim": "20/min",
+        "payout": "10/hour",
     },
 }
 SPECTACULAR_SETTINGS = {

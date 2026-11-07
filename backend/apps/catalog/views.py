@@ -5,15 +5,17 @@ from django.contrib.postgres.search import SearchQuery, SearchRank
 from django.db import transaction
 from django.db.models import Count, F, Q
 from django.db.models.functions import Coalesce
+from django.http import Http404, HttpResponse
 from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import decorators, generics, mixins, permissions, serializers, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.core import branding
 from apps.core.api import ApiError, IsEditorOrAdmin
 from apps.core.audit import diff, record, snapshot
-from apps.core.models import SiteSettings
+from apps.core.models import Announcement, SiteSettings
 from apps.payments.access import can_access, context_for, current_entitlements
 from apps.payments.models import Entitlement, PaymentGatewayConfig, SubscriptionPlan
 
@@ -177,7 +179,8 @@ class SiteView(APIView):
         return Response({
             "site_name": cfg.site_name, "tagline": cfg.tagline, "hero_title": cfg.hero_title,
             "hero_subtitle": cfg.hero_subtitle, "logo_url": s.public_url(cfg.logo),
-            "favicon_url": s.public_url(cfg.favicon), "primary_color": cfg.primary_color,
+            "favicon_url": s.public_url(cfg.favicon), "icons": branding.icon_urls(cfg),
+            "primary_color": cfg.primary_color,
             "contact_email": cfg.contact_email, "contact_phone": cfg.contact_phone, "social_links": cfg.social_links,
             "contact_whatsapp": cfg.contact_whatsapp, "maintenance_message": cfg.maintenance_message,
             "teacher": {"photo_url": s.public_url(cfg.teacher_photo), "name": cfg.teacher_name,
@@ -189,7 +192,27 @@ class SiteView(APIView):
             "payment_method": gateway.default_method if gateway.hosted_available else "ussd_push",
             "poll_seconds": gateway.poll_seconds, "default_content_price": cfg.default_content_price,
             "plans": PlanSerializer(SubscriptionPlan.objects.filter(is_active=True), many=True).data,
+            "announcements": [{
+                "id": str(a.pk), "version": a.updated_at.isoformat(), "title": a.title, "body": a.body,
+                "title_sw": a.title_sw, "body_sw": a.body_sw, "link_url": a.link_url, "link_label": a.link_label,
+                "link_label_sw": a.link_label_sw, "tone": a.tone, "placement": a.placement, "audience": a.audience,
+                "dismissible": a.dismissible, "ends_at": a.ends_at,
+            } for a in Announcement.live()[:6]],
         })
+
+
+class BrandIconView(APIView):
+    """PWA and home-screen icons, generated from the current logo, colour and site name."""
+
+    authentication_classes = []
+    serializer_class = HomeSerializer
+
+    def get(self, request, name):
+        if name not in branding.ICONS:
+            raise Http404
+        response = HttpResponse(branding.icon_png(SiteSettings.load(), name), content_type="image/png")
+        response["Cache-Control"] = "public, max-age=3600"  # every reference carries a ?v= that changes with the brand
+        return response
 
 
 class ContinueLearningView(APIView):
